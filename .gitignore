@@ -1,6 +1,4 @@
 __pycache__/
 build/
-dist/
-plotter.spec
 .DS_Store
 *.pyc
