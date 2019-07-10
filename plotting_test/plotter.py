@@ -9,16 +9,21 @@ import nox
 import bc
 import datetime
 import operator
+import numpy as np
 
+import matplotlib
+matplotlib.use('WXAgg')
+from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
+from matplotlib.backends.backend_wx import NavigationToolbar2Wx
+from matplotlib.figure import Figure
  
-class MyFrame(wx.Frame):
+class SimplePlot(wx.Frame):
     def __init__(self, queue):
         self.queue = queue
-        wx.Frame.__init__(self, None, wx.ID_ANY, title='Plotter', size=(500, 700))
+        wx.Frame.__init__(self, None, wx.ID_ANY, title='Plotter', size=(500, 750))
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.OnRefresh)
         self.timer.Start(1000)
-
         self.panel1 = wx.Panel(self, wx.ID_ANY)
         self.panel1.SetBackgroundColour("white")
         self.panel2 = wx.Panel(self, wx.ID_ANY)
@@ -30,11 +35,11 @@ class MyFrame(wx.Frame):
         panel3_sizer = wx.BoxSizer(wx.VERTICAL)
  
         plotter = plot.PlotCanvas(self.panel1)
-        plotter.SetInitialSize(size=(500, 200))
+        plotter.SetInitialSize(size=(500, 230))
         plotter2 = plot.PlotCanvas(self.panel2)
-        plotter2.SetInitialSize(size=(500, 200))
+        plotter2.SetInitialSize(size=(500, 230))
         plotter3 = plot.PlotCanvas(self.panel3)
-        plotter3.SetInitialSize(size=(500, 200))
+        plotter3.SetInitialSize(size=(500, 230))
  
         self.co2_data = []
         self.nox_data = []
@@ -43,12 +48,12 @@ class MyFrame(wx.Frame):
         line2 = plot.PolyLine([], colour='red', width=1)
         line3 = plot.PolyLine([], colour='red', width=1)
  
-        gc = plot.PlotGraphics([line], 'CO2', 'seconds ago', 'y')
-        gc2 = plot.PlotGraphics([line2], 'NOX', 'seconds ago', 'y')
-        gc3 = plot.PlotGraphics([line3], 'BC', 'seconds ago', 'y')
-        plotter.Draw(gc, xAxis=(0, 120))
-        plotter2.Draw(gc2, xAxis=(0, 120))
-        plotter3.Draw(gc3, xAxis=(0, 120))
+        gc = plot.PlotGraphics([line], 'CO2', 'seconds ago', 'ppm')
+        gc2 = plot.PlotGraphics([line2], 'NOX', 'seconds ago', 'ppb')
+        gc3 = plot.PlotGraphics([line3], 'BC', 'seconds ago', 'μg/m³')
+        plotter.Draw(gc, xAxis=(0, 120), yAxis=(0, 1000))
+        plotter2.Draw(gc2, xAxis=(0, 120), yAxis=(0, 200))
+        plotter3.Draw(gc3, xAxis=(0, 120), yAxis=(0, 100))
 
         panel1_sizer.Add(plotter,0,wx.EXPAND) 
         self.panel1.SetSizer(panel1_sizer)
@@ -62,6 +67,7 @@ class MyFrame(wx.Frame):
         main_sizer.Add(self.panel2, 1, wx.EXPAND)
         main_sizer.Add(self.panel3, 1, wx.EXPAND)
         self.SetSizer(main_sizer)
+        self.Fit()
         self.Layout()
  
         self.Show(True)
@@ -79,11 +85,11 @@ class MyFrame(wx.Frame):
         
  
         plotter = plot.PlotCanvas(self.panel1)
-        plotter.SetInitialSize(size=(500, 200))
+        plotter.SetInitialSize(size=(500, 230))
         plotter2 = plot.PlotCanvas(self.panel2)
-        plotter2.SetInitialSize(size=(500, 200))
+        plotter2.SetInitialSize(size=(500, 230))
         plotter3 = plot.PlotCanvas(self.panel3)
-        plotter3.SetInitialSize(size=(500, 200))
+        plotter3.SetInitialSize(size=(500, 230))
 
         self.update_data()
 
@@ -100,12 +106,12 @@ class MyFrame(wx.Frame):
         line2 = plot.PolyLine(nox_update, colour='red', width=1)
         line3 = plot.PolyLine(bc_update, colour='red', width=1)
  
-        gc = plot.PlotGraphics([line], 'CO2', 'seconds ago', 'y')
-        gc2 = plot.PlotGraphics([line2], 'NOX', 'seconds ago', 'y')
-        gc3 = plot.PlotGraphics([line3], 'BC', 'seconds ago', 'y')
-        plotter.Draw(gc, xAxis=(0, 120))
-        plotter2.Draw(gc2, xAxis=(0, 120))
-        plotter3.Draw(gc3, xAxis=(0, 120))
+        gc = plot.PlotGraphics([line], 'CO2', 'seconds ago', 'ppm')
+        gc2 = plot.PlotGraphics([line2], 'NOX', 'seconds ago', 'ppb')
+        gc3 = plot.PlotGraphics([line3], 'BC', 'seconds ago', 'μg/m³')
+        plotter.Draw(gc, xAxis=(0, 120), yAxis=(0, 1000))
+        plotter2.Draw(gc2, xAxis=(0, 120), yAxis=(0, 200))
+        plotter3.Draw(gc3, xAxis=(0, 120), yAxis=(0, 100))
 
         panel1_sizer.Add(plotter,0,wx.EXPAND)
         self.panel1.SetSizer(panel1_sizer)
@@ -126,7 +132,6 @@ class MyFrame(wx.Frame):
     def update_data(self):
         while not self.queue.empty():
             item = self.queue.get()
-            print(item)
             if item[0] == 'co2':
                 self.co2_data.append([item[1], item[2]])
             elif item[0] == 'nox':
@@ -149,7 +154,7 @@ bc.start()
 
 def main():
     app = wx.App()
-    f = MyFrame(q)
+    f = SimplePlot(q)
     app.MainLoop()
 
 if __name__ == '__main__':

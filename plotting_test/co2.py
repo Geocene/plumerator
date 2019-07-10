@@ -8,13 +8,13 @@ import threading
 from multiprocessing import Process,Queue
 
 def send(queue):
+	np.random.seed()
 	while True:
-		times = [abs(x) for x in np.random.normal(1, 0.5, 1000)]
-		while times:
-			t = times.pop()
-			val = get_value()
-			time.sleep(t)
-			queue.put(['co2', datetime.datetime.now(), val])
+		val = get_value()
+		time.sleep(0.2)
+		post = ['co2', datetime.datetime.now(), val]
+		print(post)
+		queue.put(post)
 
 def get_value():
-	return abs(np.random.normal(100, 50))
+	return abs(np.random.normal(loc=400, scale=50))
