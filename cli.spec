@@ -26,7 +26,7 @@ exe = EXE(pyz,
           bootloader_ignore_signals=False,
           strip=False,
           upx=True,
-          console=False )
+          console=True )
 coll = COLLECT(exe,
                a.binaries,
                a.zipfiles,
@@ -34,7 +34,3 @@ coll = COLLECT(exe,
                strip=False,
                upx=True,
                name='cli')
-app = BUNDLE(coll,
-             name='cli.app',
-             icon=None,
-             bundle_identifier=None)

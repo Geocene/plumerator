@@ -13,7 +13,6 @@ def send(queue):
 		val = get_value()
 		time.sleep(0.2)
 		post = ['bc', datetime.datetime.now(), val]
-		print(post)
 		queue.put(post)
 
 def get_value():

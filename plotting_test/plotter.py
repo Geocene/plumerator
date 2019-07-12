@@ -17,6 +17,7 @@ matplotlib.use('WXAgg')
 from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
 from matplotlib.backends.backend_wx import NavigationToolbar2Wx
 from matplotlib.figure import Figure
+from matplotlib.widgets import Button
 import matplotlib.pyplot as plt
 
 class ComplexPlot(wx.Frame):
@@ -30,6 +31,11 @@ class ComplexPlot(wx.Frame):
         self.Layout()
         self.Show(True)
 
+class ButtonEvent(object):
+
+    def event(self, event):
+        print('callback event')
+
 class CanvasPanel(wx.Panel):
     def __init__(self, parent, queue):
         self.filename = 'plotFile.csv'
@@ -42,15 +48,35 @@ class CanvasPanel(wx.Panel):
         self.co2_data = []
         self.nox_data = []
         self.bc_data = []
+        self.co2am_vals = []
+        self.noxam_vals = []
+        self.bcam_vals = []
         self.figure = Figure()
+
         self.co2_axes = self.figure.add_subplot(311)
         self.reset_data(self.co2_axes, 'co2')
+
         self.nox_axes = self.figure.add_subplot(312)
         self.reset_data(self.nox_axes, 'nox')
+
         self.bc_axes = self.figure.add_subplot(313)
         self.reset_data(self.bc_axes, 'bc')
-        self.figure.subplots_adjust(hspace=0.4)
+
+        self.figure.subplots_adjust(hspace=0.5)
         self.canvas = FigureCanvas(self, -1, self.figure)
+
+        self.co2button_ax = self.figure.add_axes([0.91, 0.90, 0.025, 0.025])
+        self.co2_button = Button(self.co2button_ax, 'Edit')
+        self.co2_button.on_clicked(self.update_ambient_co2)
+
+        self.noxbutton_ax = self.figure.add_axes([0.91, 0.61, 0.025, 0.025])
+        self.nox_button = Button(self.noxbutton_ax, 'Edit')
+        self.nox_button.on_clicked(self.update_ambient_nox)
+
+        self.bcbutton_ax = self.figure.add_axes([0.91, 0.32, 0.025, 0.025])
+        self.bc_button = Button(self.bcbutton_ax, 'Edit')
+        self.bc_button.on_clicked(self.update_ambient_bc)
+
         self.sizer = wx.BoxSizer(wx.VERTICAL)
         self.sizer.Add(self.canvas, 1, wx.LEFT | wx.TOP | wx.GROW | wx.EXPAND )
         self.SetSizer(self.sizer)
@@ -59,7 +85,7 @@ class CanvasPanel(wx.Panel):
         parent.Maximize(True)
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.drawEvent)
-        self.timer.Start(10)
+        self.timer.Start(200)
         self.Show(True)
 
     def draw(self):
@@ -72,12 +98,15 @@ class CanvasPanel(wx.Panel):
         self.co2_update = zip(*[[(current_time - x[0]).total_seconds(), x[1]] for x in self.co2_data if (current_time - x[0]).total_seconds() <= 180])
         self.nox_update = zip(*[[(current_time - x[0]).total_seconds(), x[1]] for x in self.nox_data if (current_time - x[0]).total_seconds() <= 180])
         self.bc_update = zip(*[[(current_time - x[0]).total_seconds(), x[1]] for x in self.bc_data if (current_time - x[0]).total_seconds() <= 180])
+        self.co2am_vals = [x for x in self.co2am_vals if (current_time - x[0]).total_seconds() <= 180]
+        self.noxam_vals = [x for x in self.noxam_vals if (current_time - x[0]).total_seconds() <= 180]
+        self.bcam_vals = [x for x in self.bcam_vals if (current_time - x[0]).total_seconds() <= 180]
         self.reset_data(self.co2_axes, 'co2')
         self.reset_data(self.nox_axes, 'nox')
         self.reset_data(self.bc_axes, 'bc')
-        self.co2_ambient = self.get_ambient(self.co2_update)
-        self.nox_ambient = self.get_ambient(self.nox_update)
-        self.bc_ambient = self.get_ambient(self.bc_update)
+        self.co2_ambient = self.get_ambient('co2')
+        self.nox_ambient = self.get_ambient('nox')
+        self.bc_ambient = self.get_ambient('bc')
         with open(self.filename, 'a') as plotFile:
             writer = csv.writer(plotFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             writer.writerow([current_time, 1, 'CO2_ambient', self.co2_ambient])
@@ -89,9 +118,9 @@ class CanvasPanel(wx.Panel):
         self.co2_axes.plot(np.arange(0, 180, 1), np.array([self.co2_ambient for i in range(180)]), c='b', linewidth=1.5, linestyle='--')
         self.nox_axes.plot(np.arange(0, 180, 1), np.array([self.nox_ambient for i in range(180)]), c='b', linewidth=1.5, linestyle='--')
         self.bc_axes.plot(np.arange(0, 180, 1), np.array([self.bc_ambient for i in range(180)]), c='b', linewidth=1.5, linestyle='--')
-        self.co2_axes.text(29, 1095, "Ambient temp: {:.2f}".format(self.co2_ambient), fontsize=11, bbox={'facecolor': 'red', 'alpha': 0.5, 'pad': 6})
-        self.nox_axes.text(29, 220, "Ambient temp: {:.2f}".format(self.nox_ambient), fontsize=11, bbox={'facecolor': 'red', 'alpha': 0.5, 'pad': 6})
-        self.bc_axes.text(29, 110, "Ambient temp: {:.2f}".format(self.bc_ambient), fontsize=11, bbox={'facecolor': 'red', 'alpha': 0.5, 'pad': 6})
+        self.co2_axes.text(37, 1095, "Ambient CO2 (ppm): {:.2f}".format(self.co2_ambient), fontsize=11, bbox={'facecolor': 'red', 'alpha': 0.5, 'pad': 6})
+        self.nox_axes.text(37, 220, "Ambient NOX (ppb): {:.2f}".format(self.nox_ambient), fontsize=11, bbox={'facecolor': 'red', 'alpha': 0.5, 'pad': 6})
+        self.bc_axes.text(37, 110, r"Ambient BC ($\mu g/m^3$): {:.2f}".format(self.bc_ambient), fontsize=11, bbox={'facecolor': 'red', 'alpha': 0.5, 'pad': 4})
         self.Show(True)
         self.canvas.draw()
         self.canvas.flush_events()
@@ -105,18 +134,48 @@ class CanvasPanel(wx.Panel):
             item = self.queue.get()
             if item[0] == 'co2':
                 self.co2_data.append([item[1], item[2]])
+                self.co2am_vals.append([item[1], item[2]])
                 csv_post.append([item[1], 1, 'CO2', item[2]])
             elif item[0] == 'nox':
                 self.nox_data.append([item[1], item[2]])
+                self.noxam_vals.append([item[1], item[2]])
                 csv_post.append([item[1], 2, 'NOX', item[2]])
             elif item[0] == 'bc':
                 self.bc_data.append([item[1], item[2]])
+                self.bcam_vals.append([item[1], item[2]])
                 csv_post.append([item[1], 3, 'BC', item[2]])
             else:
                 print('error bad send')
         with open(self.filename, 'a') as plotFile:
             writer = csv.writer(plotFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             writer.writerows(csv_post)
+
+    def update_ambient_co2(self, event):
+        dlg = wx.TextEntryDialog(self, 'Enter new ambient value (ppm):',"Edit CO2 Ambient","", 
+                style=wx.OK)
+        dlg.ShowModal()
+        self.co2_ambient = float(dlg.GetValue())
+        self.co2am_vals = []
+        self.co2am_vals.append([datetime.datetime.now(), self.co2_ambient])
+        dlg.Destroy()
+
+    def update_ambient_nox(self, event):
+        dlg = wx.TextEntryDialog(self, 'Enter new ambient value (ppb):',"Edit NOX Ambient","", 
+                style=wx.OK)
+        dlg.ShowModal()
+        self.nox_ambient = float(dlg.GetValue())
+        self.noxam_vals = []
+        self.noxam_vals.append([datetime.datetime.now(), self.nox_ambient])
+        dlg.Destroy()
+
+    def update_ambient_bc(self, event):
+        dlg = wx.TextEntryDialog(self, 'Enter new ambient value (μg/m³):',"Edit BC Ambient","", 
+                style=wx.OK)
+        dlg.ShowModal()
+        self.bc_ambient = float(dlg.GetValue())
+        self.bcam_vals = []
+        self.bcam_vals.append([datetime.datetime.now(), self.bc_ambient])
+        dlg.Destroy()
 
     def reset_data(self, plot, name):
         plot.clear()
@@ -137,8 +196,13 @@ class CanvasPanel(wx.Panel):
             plot.set_xlabel('seconds ago')
         plot.tick_params(axis='y', left=True, right=True, labelright=True)
 
-    def get_ambient(self, data_list):
-        vals = data_list[1]
+    def get_ambient(self, name):
+        if name == 'co2':
+            vals = [x[1] for x in self.co2am_vals]
+        elif name == 'nox':
+            vals = [x[1] for x in self.noxam_vals]
+        elif name == 'bc':
+            vals = [x[1] for x in self.bcam_vals]
         size = len(vals)
         total = 0.0
         for item in vals:
