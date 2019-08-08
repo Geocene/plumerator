@@ -13,9 +13,10 @@ from multiprocessing import Process,Queue
 
 def send(queue):
 	files = ['LI7000-1-CO2-nan.csv', 'LI820-1-CO2-nan.csv', 'SBA5-1-CO2-nan.csv', 'Vaisala-1-CO2-nan.csv']
+	names = [x.replace('.csv', '') for x in files]
 	threads = []
 	for index in range(4):
-		t = threading.Thread(target=send_file, args=(queue, files[index], index))
+		t = threading.Thread(target=send_file, args=(queue, names[index], index))
 		t.daemon = True
 		threads.append(t)
 	try:
@@ -28,7 +29,7 @@ def send(queue):
 
 def send_file(queue, name, thread):
 	script_dir = os.path.dirname(__file__)
-	new_path = os.path.join(script_dir, '..', 'plume_results', 'Trapac_2019_Day5', name)
+	new_path = os.path.join(script_dir, '..', 'plume_results', 'Trapac_2019_Day5', name + '.csv')
 	with open(new_path) as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
 		next(csv_reader)
@@ -42,7 +43,7 @@ def send_file(queue, name, thread):
 			currpost_value = float(first_item[2])
 		except ValueError:
 			currpost_value = 0
-		first_post = ['co2', send_time, currpost_value, thread]
+		first_post = ['co2', send_time, currpost_value, thread, name]
 		queue.put(first_post)
 		for item in csv_reader:
 			try:
@@ -55,7 +56,7 @@ def send_file(queue, name, thread):
 				local_value = float(item[2])
 			except ValueError:
 				local_value = 0
-			post = ['co2', datetime.now(), local_value, thread]
+			post = ['co2', datetime.now(), local_value, thread, name]
 			queue.put(post)
 
 # def send(queue):
