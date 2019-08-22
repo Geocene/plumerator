@@ -33,6 +33,8 @@ def send_file(queue, name, thread):
 	with open(new_path) as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
 		next(csv_reader)
+		for i in range(360):
+			next(csv_reader)
 		first_item = next(csv_reader)
 		try:
 		    actual_time = datetime.strptime(first_item[0], '%Y-%m-%d %H:%M:%S.%f')
