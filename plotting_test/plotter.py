@@ -5,13 +5,16 @@ import wx
 import wx.lib.plot as plot
 import wx.lib.newevent
 from multiprocessing import Process,Queue,Pipe
+import os
+import sys
+file_dir = os.path.dirname(__file__)
+sys.path.append(file_dir)
 import co2
 import nox
 import bc
 import datetime
 import operator
 import signal
-import os
 import numpy as np
 import csv
 import time
