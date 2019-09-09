@@ -1,0 +1,5 @@
+matplotlib==2.2.4
+numpy==1.16.4
+PyInstaller==3.4
+scipy==1.2.2
+wxPython==4.0.6

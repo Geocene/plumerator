@@ -15,7 +15,6 @@ import os
 import numpy as np
 import csv
 import time
-from pprint import pprint
 
 import matplotlib
 matplotlib.use('WXAgg')
@@ -54,21 +53,25 @@ class CanvasPanel(wx.Panel):
         self.plume_counter = 1
 
         # create and write headers of output files
-        self.plotfile = 'plotFile.csv'
-        self.plumefile = 'plumeFile.csv'
-        self.summaryfile = 'summary.csv'
+        self.plotfile = 'raw_data.csv'
+        self.plumefile = 'plumes.csv'
+        self.plumeArea = 'plume_areas.csv'
+        self.summaryfile = 'secondly_data.csv'
         with open(self.plotfile, mode='w') as plotFile:
             self.plotData = csv.writer(plotFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             self.plotData.writerow(['Timestamp', 'Instr ID', 'Channel', 'Value'])
         with open(self.plumefile, mode='w') as plumeFile:
             self.plumeData = csv.writer(plumeFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             self.plumeData.writerow(['Instr ID', 'Plume ID', 'Start Time', 'Stop Time'])
+        with open(self.plumeArea, mode='w') as plumeArea:
+            self.plumeAreas = csv.writer(plumeArea, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            self.plumeAreas.writerow(['Plume ID', 'Instr ID', 'Area', 'Units'])
         self.setSummary = True
 
         # timing test
         with open('timing.csv', mode='w') as timingFile:
             timeData = csv.writer(timingFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            timeData.writerow(['Drawcycle', 'Update Data', 'Cleanup', 'Get Updates', 'Analyze', 'Write Summary', 'Update Ambient', 'Plotting', 'Histograms', 'Plumes'])
+            timeData.writerow(['Drawcycle', 'Update Data', 'Cleanup', 'Update Ambient', 'Get Updates', 'Analyze', 'Write Summary', 'Plotting', 'Histograms', 'Plumes'])
 
         wx.Panel.__init__(self, parent)
 
@@ -154,7 +157,11 @@ class CanvasPanel(wx.Panel):
         self.reset_data(self.bc_axes, 'bc')
 
         self.nox_histogram_axes = self.figure.add_subplot(self.gridspec[1, 1])
+        self.nox_histogram_axes.set_ylabel('Observations')
+        self.nox_histogram_axes.set_xlabel('ppb (NOX) / ppm (CO2)')
         self.bc_histogram_axes = self.figure.add_subplot(self.gridspec[2, 1])
+        self.bc_histogram_axes.set_ylabel('Observations')
+        self.bc_histogram_axes.set_xlabel(r'$\mu g/m^3$ (BC) / ppm (CO2)')
 
         self.figure.subplots_adjust(hspace=0.5)
         self.canvas = FigureCanvas(self, -1, self.figure)
@@ -260,15 +267,6 @@ class CanvasPanel(wx.Panel):
 
         getUpdate = time.time()
         row.append(getUpdate - cleanupData)
-        
-
-        # plume analysis and summary write
-        self.analyze()
-        analyze = time.time()
-        row.append(analyze - getUpdate)
-        self.write_ts()
-        write_summ = time.time()
-        row.append(write_summ - analyze)
 
         self.reset_data(self.co2_axes, 'co2')
         self.reset_data(self.nox_axes, 'nox')
@@ -280,7 +278,17 @@ class CanvasPanel(wx.Panel):
             self.ambient_cs = 5
 
         update_am = time.time()
-        row.append(update_am - write_summ)
+        row.append(update_am - getUpdate)
+
+        # plume analysis and summary write
+        self.analyze()
+        analyze = time.time()
+        row.append(analyze - update_am)
+        self.write_ts()
+        write_summ = time.time()
+        row.append(write_summ - analyze)
+
+        
 
         current_time = datetime.datetime.now()
         selected_co2_id = self.getIdByName(self.selected_co2_plot, 'co2')
@@ -306,7 +314,7 @@ class CanvasPanel(wx.Panel):
                 self.nox_axes.plot(nox_ambient_line[0], nox_ambient_line[1], c='b', linewidth=1.5, linestyle='--')
 
         plotting = time.time()
-        row.append(plotting - update_am)
+        row.append(plotting - write_summ)
 
         current_time = datetime.datetime.now()
 
@@ -357,81 +365,89 @@ class CanvasPanel(wx.Panel):
                     return k
 
     def analyze(self):
+        to_analyze = []
         current_time = datetime.datetime.now()
         for k, v in self.ts_aligned_dps.items():
             if (current_time - k).total_seconds() >= 185:
                 del self.ts_aligned_dps[k]
             if (current_time - k).total_seconds() >= 90 and v['plume'] == None:
-                co2_vals = v['co2'][self.primary_co2instr]
-                co2_value = self.average_list(co2_vals)
-                if co2_value:
-                    if co2_value >= 750:
-                        v['plume'] = True
-                        self.ts_aligned_dps[k] = v
-                        if self.plume_markers[0] == None:
-                            self.plume_markers[0] = k
-                    else:
-                        v['plume'] = False
-                        self.ts_aligned_dps[k] = v
-                        if self.plume_markers[0] != None:
-                            self.plume_markers[1] = k
-                            self.write_plume(self.plume_markers)
-                            self.update_histogram(self.plume_markers)
-                            self.plume_markers = [None, None]
+                to_analyze.append((k, v))
+        to_analyze.sort(key=operator.itemgetter(0))
+        for k, v in to_analyze:
+            co2_vals = v['co2'][self.primary_co2instr]
+            co2_value = self.average_list(co2_vals)
+            if co2_value:
+                if co2_value >= 750:
+                    v['plume'] = True
+                    self.ts_aligned_dps[k] = v
+                    if self.plume_markers[0] == None:
+                        self.plume_markers[0] = k
+                else:
+                    v['plume'] = False
+                    self.ts_aligned_dps[k] = v
+                    if self.plume_markers[0] != None:
+                        self.plume_markers[1] = k
+                        self.update_histogram(self.plume_markers)
+                        self.write_plume(self.plume_markers)
+                        self.plume_markers = [None, None]
 
     def update_histogram(self, plume_markers):
         current_time = datetime.datetime.now()
+        areas_post = []
 
-        plume_markers = [(current_time - x).total_seconds() for x in plume_markers]
-        plume_markers = plume_markers[::-1]
+        plume_markers = [plume_markers[0], plume_markers[1] + datetime.timedelta(seconds=1)]
 
-        co2_plot = self.co2_updates[self.primary_co2instr]
+        co2_plot = zip(*[x for x in zip(*self.co2_updates[self.primary_co2instr]) if plume_markers[0] <= x[2] <= plume_markers[1]])
         co2_plot = [x[::-1] for x in co2_plot]
-        co2am_plot = zip(*[[(current_time - x[0]).total_seconds(), x[1]] for x in self.co2_ambient[self.primary_co2instr] if (current_time - x[0]).total_seconds() <= 180])
+        co2am_plot = zip(*[[(current_time - x[0]).total_seconds(), x[1]] for x in self.co2_ambient[self.primary_co2instr] if plume_markers[0] <= x[0] <= plume_markers[1]])
         co2am_plot = [x[::-1] for x in co2am_plot]
-        co2_int = InterpolatedUnivariateSpline(co2_plot[0], co2_plot[1], k=1)
-        co2_area = co2_int.integral(plume_markers[0], plume_markers[1])
-        co2am_int = InterpolatedUnivariateSpline(co2am_plot[0], co2am_plot[1], k=1)
-        co2am_area = co2am_int.integral(plume_markers[0], plume_markers[1])
+        if not co2am_plot:
+            print(self.co2_ambient[self.primary_co2instr])
+            print(plume_markers)
+        co2_area = np.trapz(co2_plot[1], x=co2_plot[0])
+        co2am_area = np.trapz(co2am_plot[1], x=co2am_plot[0])
         co2_calc_area = co2_area - co2am_area
+        areas_post.append([self.plume_counter, self.co2_chan_names[self.primary_co2instr], co2_calc_area, 'ppm-co2-s'])
 
         for i in range(self.nox_chans):
-            nox_plot = self.nox_updates[i]
+            nox_plot = zip(*[x for x in zip(*self.nox_updates[i]) if plume_markers[0] <= x[2] <= plume_markers[1]])
             nox_plot = [x[::-1] for x in nox_plot]
-            noxam_plot = zip(*[[(current_time - x[0]).total_seconds(), x[1]] for x in self.nox_ambient[i] if (current_time - x[0]).total_seconds() <= 180])
+            noxam_plot = zip(*[[(current_time - x[0]).total_seconds(), x[1]] for x in self.nox_ambient[i] if plume_markers[0] <= x[0] <= plume_markers[1]])
             noxam_plot = [x[::-1] for x in noxam_plot]
             if nox_plot:
-                nox_int = InterpolatedUnivariateSpline(nox_plot[0], nox_plot[1], k=1)
-                nox_area = nox_int.integral(plume_markers[0], plume_markers[1])
+                nox_area = np.trapz(nox_plot[1], x=nox_plot[0])
             else:
                 nox_area = 0
             if noxam_plot:
-                noxam_int = InterpolatedUnivariateSpline(noxam_plot[0], noxam_plot[1], k=1)
-                noxam_area = noxam_int.integral(plume_markers[0], plume_markers[1])
+                noxam_area = np.trapz(noxam_plot[1], x=noxam_plot[0])
             else:
                 noxam_area = 0
             nox_calc_area = nox_area - noxam_area
+            areas_post.append([self.plume_counter, self.nox_chan_names[i], nox_calc_area, 'ppb-nox-s'])
             nox_histogram_val = nox_calc_area / co2_calc_area
             self.nox_histogram[i].append(nox_histogram_val)
 
         for i in range(self.bc_chans):
-            bc_plot = self.bc_updates[i]
+            bc_plot = zip(*[x for x in zip(*self.bc_updates[i]) if plume_markers[0] <= x[2] <= plume_markers[1]])
             bc_plot = [x[::-1] for x in bc_plot]
-            bcam_plot = zip(*[[(current_time - x[0]).total_seconds(), x[1]] for x in self.bc_ambient[i] if (current_time - x[0]).total_seconds() <= 180])
+            bcam_plot = zip(*[[(current_time - x[0]).total_seconds(), x[1]] for x in self.bc_ambient[i] if plume_markers[0] <= x[0] <= plume_markers[1]])
             bcam_plot = [x[::-1] for x in bcam_plot]
             if bc_plot:
-                bc_int = InterpolatedUnivariateSpline(bc_plot[0], bc_plot[1], k=1)
-                bc_area = bc_int.integral(plume_markers[0], plume_markers[1])
+                bc_area = np.trapz(bc_plot[1], x=bc_plot[0])
             else:
                 bc_area = 0
             if bcam_plot:
-                bcam_int = InterpolatedUnivariateSpline(bcam_plot[0], bcam_plot[1], k=1)
-                bcam_area = bcam_int.integral(plume_markers[0], plume_markers[1])
+                bcam_area = np.trapz(bcam_plot[1], x=bcam_plot[0])
             else:
                 bcam_area = 0
             bc_calc_area = bc_area - bcam_area
+            areas_post.append([self.plume_counter, self.bc_chan_names[i], bc_calc_area, 'μg/m³-bc-s'])
             bc_histogram_val = bc_calc_area / co2_calc_area
             self.bc_histogram[i].append(bc_histogram_val)
+
+        with open(self.plumeArea, 'a') as plumeAreas:
+            writer = csv.writer(plumeAreas, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            writer.writerows(areas_post)
 
         self.replot_hists = True
 
