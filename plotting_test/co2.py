@@ -28,8 +28,11 @@ def send(queue):
 		sys.exit()
 
 def send_file(queue, name, thread):
-	script_dir = os.path.dirname(__file__)
-	new_path = os.path.join(script_dir, '..', 'plume_results', 'Trapac_2019_Day5', name + '.csv')
+	if getattr(sys, 'frozen', False):
+		new_path = os.path.realpath(os.path.join(os.getcwd(), '..', 'plume_results', 'Trapac_2019_Day5', name + '.csv'))
+	elif __file__:
+		__location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
+		new_path = os.path.join(__location__, '..', 'plume_results', 'Trapac_2019_Day5', name + '.csv')
 	with open(new_path) as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
 		next(csv_reader)
@@ -37,9 +40,9 @@ def send_file(queue, name, thread):
 			next(csv_reader)
 		first_item = next(csv_reader)
 		try:
-		    actual_time = datetime.strptime(first_item[0], '%Y-%m-%d %H:%M:%S.%f')
+			actual_time = datetime.strptime(first_item[0], '%Y-%m-%d %H:%M:%S.%f')
 		except ValueError:
-		    actual_time = datetime.strptime(first_item[0], '%M:%S.%f')
+			actual_time = datetime.strptime(first_item[0], '%M:%S.%f')
 		try:
 			currpost_value = float(first_item[2])
 		except ValueError:
@@ -48,9 +51,9 @@ def send_file(queue, name, thread):
 		queue.put(first_post)
 		for item in csv_reader:
 			try:
-			    local_time = datetime.strptime(item[0], '%Y-%m-%d %H:%M:%S.%f')
+				local_time = datetime.strptime(item[0], '%Y-%m-%d %H:%M:%S.%f')
 			except ValueError:
-			    local_time = datetime.strptime(item[0], '%M:%S.%f')
+				local_time = datetime.strptime(item[0], '%M:%S.%f')
 			time.sleep((local_time - actual_time).total_seconds())
 			actual_time = local_time
 			try:

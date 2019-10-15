@@ -9,10 +9,10 @@ import os
 import sys
 file_dir = os.path.dirname(__file__)
 sys.path.append(file_dir)
-from . import co2
-from . import nox
-from . import bc
-from . import data_ac
+import co2
+import nox
+import bc
+import data_ac
 import datetime
 import operator
 import signal
