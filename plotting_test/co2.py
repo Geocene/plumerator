@@ -40,12 +40,11 @@ def send_file(queue, name, thread):
 		    actual_time = datetime.strptime(first_item[0], '%Y-%m-%d %H:%M:%S.%f')
 		except ValueError:
 		    actual_time = datetime.strptime(first_item[0], '%M:%S.%f')
-		send_time = datetime.now()
 		try:
 			currpost_value = float(first_item[2])
 		except ValueError:
 			currpost_value = 0
-		first_post = ['co2', send_time, currpost_value, thread, name]
+		first_post = ([name, 'CO2'], [currpost_value, datetime.now()])
 		queue.put(first_post)
 		for item in csv_reader:
 			try:
@@ -58,7 +57,7 @@ def send_file(queue, name, thread):
 				local_value = float(item[2])
 			except ValueError:
 				local_value = 0
-			post = ['co2', datetime.now(), local_value, thread, name]
+			post = ([name, 'CO2'], [local_value, datetime.now()])
 			queue.put(post)
 
 # def send(queue):
