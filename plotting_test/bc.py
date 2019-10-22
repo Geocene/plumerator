@@ -29,10 +29,9 @@ def send(queue):
 
 def send_file(queue, name, thread):
 	if getattr(sys, 'frozen', False):
-		new_path = os.path.realpath(os.path.join(os.getcwd(), '..', 'plume_results', 'Trapac_2019_Day5', name + '.csv'))
-	elif __file__:
+		__location__ = sys._MEIPASS
+	else:
 		__location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
-		new_path = os.path.join(__location__, '..', 'plume_results', 'Trapac_2019_Day5', name + '.csv')
 	new_path = os.path.join(__location__, '..', 'plume_results', 'Trapac_2019_Day5', name + '.csv')
 	with open(new_path) as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')

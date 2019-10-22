@@ -1,9 +1,8 @@
 __pycache__/
 build/
 dist/
+csv_outputs/
 .DS_Store
 *.pyc
 plume_results/
-plotFile.csv
-plumeFile.csv
-summary.csv
+timing.csv

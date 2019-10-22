@@ -3,6 +3,8 @@ import signal
 from datetime import datetime
 import time
 import threading
+import collections
+import fcntl
 from multiprocessing import Process, Queue
 import os, sys, csv, re, math
 import numpy as np
@@ -40,15 +42,24 @@ class Instrument(object):
 	def __repr__(self):
 		return self.__str__()
 
+	def dumpserial(self, ser, dt):
+		with open(filepath + 'rawraw_data.csv', mode='ab') as rawFile:
+			fcntl.flock(rawFile, fcntl.LOCK_EX)
+			rawData = csv.writer(rawFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+			rawData.writerow([dt, self.name, self.serial_num, ser])
+			fcntl.flock(rawFile, fcntl.LOCK_UN)
+
 	def run(self, queue):
 		while not stop_requested:
 			values = self.get_values()
-			if len(values) == 0:
+			if not values:
 				continue
 			else:
 				data_pack = ([self.name, self.v_type], values)
-				queue.put(data_pack)
 				print(data_pack)
+				queue.put(data_pack)
+		if stop_requested:
+			self.serial.close()
 
 # BC Instr
 
@@ -63,6 +74,7 @@ class AE33_Instrument(Instrument):
 		bc_values = []
 		ser = self.serial.readline()
 		dt_object = datetime.now()
+		self.dumpserial(ser, dt_object)
 		time_str3 = dt_object.strftime('%H:%M:%S')
 		values_ae33 = ser.split('\n')[0].split(',')
 		time_now=int(time.time()*1000000000)
@@ -71,11 +83,11 @@ class AE33_Instrument(Instrument):
 			bc_ae33 = bc2/1000
 			flow = float(values_ae33[10])
 			bc_values.insert(0,bc_ae33)
-			bc_values.insert(1,time_now)
+			bc_values.insert(1,dt_object)
 			bc_values.insert(2,flow)
 		except(ValueError,IndexError) as e:
 			print("ae33 index failure")
-			return bc_values
+			return None
 		return bc_values
 
 class AE16_Instrument(Instrument):
@@ -89,6 +101,7 @@ class AE16_Instrument(Instrument):
 		bc_values = []
 		ser = self.serial.readline()
 		dt_object = datetime.now()
+		self.dumpserial(ser, dt_object)
 		time_str2 = dt_object.strftime('%H:%M:%S')
 		values_ae16 = ser.split('\n')[0].split(',')
 		time_now=int(time.time()*1000000000)
@@ -100,13 +113,13 @@ class AE16_Instrument(Instrument):
 			bc = bc / (math.exp((-1*atn)/100)*bc_correction + (1-bc_correction))
 			flow = float(values_ae16[3])
 			bc_values.insert(0,bc)
-			bc_values.insert(1,time_now)
+			bc_values.insert(1,dt_object)
 			bc_values.insert(2,flow)
 			bc_values.insert(3,atn)
 
 		except(ValueError,IndexError) as e:
 			print("ae16 index error")
-			return bc_values
+			return None
 		return bc_values
 
 class ABCD_Instrument(Instrument):
@@ -120,6 +133,8 @@ class ABCD_Instrument(Instrument):
 		bc_values = []
 		ser = self.serial.readline()
 		values_abcd1 = ser.split('\n')[0].split(',')
+		dt_object = datetime.now()
+		self.dumpserial(ser, dt_object)
 		#print(values_abcd1)
 		time_now=int(time.time()*1000000000)
 		#time_str1 = dt_object.strftime('%H:%M:%S')
@@ -130,14 +145,14 @@ class ABCD_Instrument(Instrument):
 			bc = bc / (math.exp((-1*atn)/100)*bc_correction + (1-bc_correction))
 			flow = float(values_abcd1[7])
 			bc_values.insert(0,bc)
-			bc_values.insert(1,time_now)
+			bc_values.insert(1,dt_object)
 			bc_values.insert(2,flow)
 			bc_values.insert(3,atn)
 			#print(bc_abcd1)
 
 		except (ValueError,IndexError) as e:
 			print("abcd index failure")
-			return bc_values
+			return None
 		return bc_values
 
 class MA300_Instrument(Instrument):
@@ -145,31 +160,32 @@ class MA300_Instrument(Instrument):
 		self.name = 'MA300'
 		self.v_type = 'BC'
 		self.serial_num = 'FT0HCK2R'
-		super(MA300_Instrument, self).__init__('/dev/cu.usbserial-FT0HCK2R', 9600)
+		super(MA300_Instrument, self).__init__('/dev/cu.usbserial-FT0HCK2R', 1000000)
 
 	def get_values(self):
 		bc_values = []
 		ser = self.serial.readline()
 		dt_object = datetime.now()
+		self.dumpserial(ser, dt_object)
 		time_str2 = dt_object.strftime('%H:%M:%S')
 		values_ae16 = ser.split('\n')[0].split(',')
 		time_now=int(time.time()*1000000000)
 
 		try:
 			#print(values_ae16)
-			bc1 = float(values_ae16[2])
+			bc1 = float(values_ae16[44])
 			bc = bc1/1000
 			atn = float(values_ae16[9])
 			bc = bc / (math.exp((-1*atn)/100)*bc_correction + (1-bc_correction))
 			flow = float(values_ae16[4])
 			bc_values.insert(0,bc)
-			bc_values.insert(1,time_now)
+			bc_values.insert(1,dt_object)
 			bc_values.insert(2,flow)
 			bc_values.insert(3,atn)
 
 		except(ValueError,IndexError) as e:
-			print("ae16 index error")
-			return bc_values
+			print("ma300 index error")
+			return None
 		return bc_values
 
 # CO2 Instr
@@ -184,22 +200,22 @@ class LI7000_Instrument(Instrument):
 		co2_values = []
 		ser = self.serial.readline()
 		dt_object = datetime.now()
+		self.dumpserial(ser, dt_object)
 		time_str5 = dt_object.strftime('%H:%M:%S')
 		time_now=int(time.time()*1000000000)
 		try:
 			values_li7000 = ser.split('\n')[0].split('\t')
-			print(values_li7000, len(values_li7000))
 
 			#print("The values for li700 are:")
 			#print(values_li7000)
 			co2_values.insert(0,float(values_li7000[8])) # CO2 value
-			co2_values.insert(1,time_now)
+			co2_values.insert(1,dt_object)
 			co2_values.insert(2,float(values_li7000[24])) # Temp
 			co2_values.insert(3,float(values_li7000[21])) # Pressure
 			#print(co2_values)
 		except (ValueError,IndexError) as e:
 			print("li7000 index failure")
-			return co2_values
+			return None
 		return co2_values
 
 class LI820_Instrument(Instrument):
@@ -213,19 +229,20 @@ class LI820_Instrument(Instrument):
 		co2_values = []
 		ser = self.serial.readline()
 		dt_object = datetime.now()
+		self.dumpserial(ser, dt_object)
 		time_str4 = dt_object.strftime('%H:%M:%S')
 		time_now=int(time.time()*1000000000)
 		try:
 			values_li820 = re.split(r'[<>]', ser)
 			#print(values_1820)
 			co2_values.insert(0,float(values_li820[14])) # CO2 value
-			co2_values.insert(1,time_now)
+			co2_values.insert(1,dt_object)
 			co2_values.insert(2,float(values_li820[6])) # Temp
 			co2_values.insert(3,float(values_li820[10])) # Pressure
 
 		except(ValueError,IndexError) as e:
 			print("li820 index failure")
-			return co2_values
+			return None
 		return co2_values
 
 class SBA5_Instrument(Instrument):
@@ -239,6 +256,7 @@ class SBA5_Instrument(Instrument):
 		co2_values = []
 		ser = self.serial.readline()
 		dt_object = datetime.now()
+		self.dumpserial(ser, dt_object)
 		time_str6 = dt_object.strftime('%H:%M:%S')
 		values_sba5 = ser.split('\n')[0].split(' ')
 		time_now=int(time.time()*1000000000)
@@ -247,7 +265,7 @@ class SBA5_Instrument(Instrument):
 			#print(values_sba5)
 			#print(float(values_sba5[7]))
 			co2_values.insert(0,float(values_sba5[3])) # CO2 value
-			co2_values.insert(1,time_now)# Time
+			co2_values.insert(1,dt_object)# Time
 			co2_values.insert(2,float(values_sba5[4])) # CO2 temp
 			co2_values.insert(3,(float(values_sba5[7])/1000)) # CO2 pressure
 
@@ -255,7 +273,7 @@ class SBA5_Instrument(Instrument):
 
 		except (ValueError, IndexError) as e:
 			print("sba5 index failure")
-			return co2_values
+			return None
 		return co2_values
 
 class VCO2_Instrument(Instrument):
@@ -274,6 +292,7 @@ class VCO2_Instrument(Instrument):
 		co2_values = []
 		ser = self.serial.readline()
 		dt_object = datetime.now()
+		self.dumpserial(ser, dt_object)
 		time_str8 = dt_object.strftime('%H:%M:%S')
 		values_vco2 = ser.split('\n')[0].split('\t')
 		time_now=int(time.time()*1000000000)
@@ -281,14 +300,14 @@ class VCO2_Instrument(Instrument):
 		try:
 			#print(values_vco2)
 			co2_values.insert(0,float(values_vco2[0])) # CO2
-			co2_values.insert(1,time_now) # time
+			co2_values.insert(1,dt_object) # time
 			co2_values.insert(2,float(values_vco2[1])) # temp
 			#co2_values.insert(3,float(999)) #pressure
 
 
 		except (ValueError, IndexError) as e:
 			print("vco2 index failure")
-			return co2_values
+			return None
 		return co2_values
 
 class K30_Instrument(Instrument):
@@ -308,21 +327,22 @@ class K30_Instrument(Instrument):
 		time.sleep(0.5)
 		resp = self.serial.read(7)
 		dt_object = datetime.now()
+		self.dumpserial(resp, dt_object)
 		time_str10 = dt_object.strftime('%H:%M:%S')
 		time_now=int(time.time()*1000000000)
 		high = ord(resp[3])
-   		low = ord(resp[4])
-   		co2 = (high*256) + low
-   		time.sleep(0.1)
+		low = ord(resp[4])
+		co2 = (high*256) + low
+		time.sleep(0.1)
 
-   		try:
-   			co2_values.insert(0, co2)
-   			co2_values.insert(1, time_now)
+		try:
+			co2_values.insert(0, co2)
+			co2_values.insert(1, dt_object)
 
-   		except Exception as e:
-   			print("k30 index failure")
-   			return co2_values
-   		return co2_values
+		except Exception as e:
+			print("k30 index failure")
+			return None
+		return co2_values
 
 
 # NOX Instr
@@ -339,6 +359,7 @@ class UCB_Instrument(Instrument):
 		self.serial.write(b'\x0201RD0\x03\x26')
 		ser = self.serial.readline()
 		dt_object = datetime.now()
+		self.dumpserial(ser, dt_object)
 		time_str10 = dt_object.strftime('%H:%M:%S')
 		time_now=int(time.time()*1000000000)
 
@@ -348,11 +369,11 @@ class UCB_Instrument(Instrument):
 			#print(values_ucb)
 			if float(values_ucb[1])!=0:
 				nox_values.insert(0,float(values_ucb[1]))
-				nox_values.insert(1,time_now)
+				nox_values.insert(1,dt_object)
 
 		except Exception as e:
 			print("ucb index failure")
-			return nox_values
+			return None
 		return nox_values
 
 class CAPS_Instrument(Instrument):
@@ -366,6 +387,7 @@ class CAPS_Instrument(Instrument):
 		nox_values = []
 		ser =  self.serial.readline()
 		dt_object = datetime.now()
+		self.dumpserial(ser, dt_object)
 		time_str9 = dt_object.strftime('%H:%M:%S')
 		values_caps = ser.split('\n')[0].split(',')
 		time_now=int(time.time()*1000000000)
@@ -374,14 +396,28 @@ class CAPS_Instrument(Instrument):
 			#print(values_caps)
 			nox1 = float(values_caps[1])
 			nox_values.insert(0,(nox1/1000))
-			nox_values.insert(1,time_now)
+			nox_values.insert(1,dt_object)
 
 		except (ValueError, IndexError) as e:
 			print("caps index failure")
-			return nox_values
+			return None
 		return nox_values
 
 def main_wrapper(q):
+	global filepath
+	filepath = q.get()
+
+	if not os.path.exists(os.path.dirname(filepath)):
+            try:
+                os.makedirs(os.path.dirname(filepath))
+            except OSError as exc: # Guard against race condition
+                if exc.errno != errno.EEXIST:
+                    raise
+
+	with open(filepath + 'rawraw_data.csv', mode='wb') as rawFile:
+		rawData = csv.writer(rawFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+		rawData.writerow(['Timestamp', 'Instr', 'S#', 'Message'])
+
 	comport_dict = {
 		'FTXP6UA4': AE33_Instrument, 
 		'FTXP9NHN': AE16_Instrument,
@@ -391,7 +427,7 @@ def main_wrapper(q):
 		'FTXP9HEV': LI820_Instrument,
 		'DN03Y92G': SBA5_Instrument,
 		'Vaisala':VCO2_Instrument,
-		'FTXP9VNO': UCB_Instrument,
+		'FTXP9VNO': UCB_Instrument, # CLD64
 		'FTXPC1N7': CAPS_Instrument,
 		'AH06VSA4': K30_Instrument
 		}
@@ -416,7 +452,9 @@ def main_wrapper(q):
 			sn = element.device.split('/dev/cu.wchusbserial')[1]
 			comport_dict['wchusbserial'](sn)
 
-	print(instruments)
+	print(('instruments', instruments))
+
+	q.put(('instruments', instruments))
 
 	processes = []
 	for instr in instruments:
@@ -424,18 +462,12 @@ def main_wrapper(q):
 		p.start()
 		processes.append(p)
 
-	i = 0
-
 	while not stop_requested:
-		q.put(['test', i])
-		print(q.get())
-		i += 1
-		time.sleep(0.5)
+		time.sleep(1)
 
 	return
 
 def main():
-
 	comport_dict = {
 		'FTXP6UA4': AE33_Instrument, 
 		'FTXP9NHN': AE16_Instrument,
@@ -478,8 +510,6 @@ def main():
 		p = Process(target=instr.run, args=(q,))
 		p.start()
 		processes.append(p)
-
-	i = 0
 
 	while not stop_requested:
 		time.sleep(1)

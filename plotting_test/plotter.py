@@ -6,19 +6,20 @@ import wx.lib.plot as plot
 import wx.lib.newevent
 from multiprocessing import Process,Queue,Pipe
 import os
+import errno
 import sys
-file_dir = os.path.dirname(__file__)
-sys.path.append(file_dir)
-import co2
-import nox
-import bc
-import data_ac
+import co2 as c
+import nox as n
+import bc as b
+import data_ac as d_ac
 import datetime
 import operator
 import signal
 import numpy as np
 import csv
+import collections
 import time
+import hashlib
 
 import matplotlib
 matplotlib.use('WXAgg')
@@ -31,11 +32,16 @@ import matplotlib.gridspec as gridspec
 from scipy.interpolate import InterpolatedUnivariateSpline
 
 stop_requested = False
+output_dir = '/csv_outputs/'
+hash = hashlib.sha1()
+hash.update(str(time.time()))
+time_hash = hash.hexdigest()[:10] + '/'
+filepath = os.getcwd() + output_dir + time_hash
 
 class ComplexPlot(wx.Frame):
-    def __init__(self, queue):
+    def __init__(self, queue, instruments=None):
         wx.Frame.__init__(self, None, wx.ID_ANY, title='Plotter', size=(500, 750))
-        self.panel = CanvasPanel(self, queue)
+        self.panel = CanvasPanel(self, queue, instruments)
 
         sizer = wx.BoxSizer(wx.VERTICAL)
         sizer.Add(self.panel,1,wx.EXPAND)
@@ -44,41 +50,61 @@ class ComplexPlot(wx.Frame):
         self.Show(True)
 
 class CanvasPanel(wx.Panel):
-    def __init__(self, parent, queue):
-        # set # of channels and line colors
-        self.co2_chans = 4
+    def __init__(self, parent, queue, instruments):
+
+        if instruments:
+            self.instruments = instruments[1]
+            self.co2_instr = [x for x in self.instruments if x.v_type == 'CO2']
+            self.bc_instr = [x for x in self.instruments if x.v_type == 'BC']
+            self.nox_instr = [x for x in self.instruments if x.v_type == 'NOX']
+            self.co2_chans = len(self.co2_instr)
+            self.bc_chans = len(self.bc_instr)
+            self.nox_chans = len(self.nox_instr)
+        else:
+            # set # of channels and line colors
+            self.co2_chans = 4
+            self.bc_chans = 2
+            self.nox_chans = 2
+
         self.co2_chan_names = {}
-        self.bc_chans = 2
         self.bc_chan_names = {}
-        self.nox_chans = 2
         self.nox_chan_names = {}
         self.co2_temp = 0
         self.nox_temp = 0
         self.bc_temp = 0
-        self.line_colors = 'rgbycm'
+
 
         # set primary co2 instrument and plume counter
         self.primary_co2instr = 0 
         self.plume_counter = 1
 
         # create and write headers of output files
-        self.plotfile = 'raw_data.csv'
-        self.plumefile = 'plumes.csv'
-        self.plumeArea = 'plume_areas.csv'
-        self.summaryfile = 'secondly_data.csv'
-        with open(self.plotfile, mode='w') as plotFile:
+        self.filepath = filepath
+
+        if not os.path.exists(os.path.dirname(self.filepath)):
+            try:
+                os.makedirs(os.path.dirname(self.filepath))
+            except OSError as exc: # Guard against race condition
+                if exc.errno != errno.EEXIST:
+                    raise
+
+        self.plotfile = self.filepath + 'raw_data.csv'
+        self.plumefile = self.filepath + 'plumes.csv'
+        self.plumeArea = self.filepath + 'plume_areas.csv'
+        self.summaryfile = self.filepath + 'secondly_data.csv'
+        with open(self.plotfile, mode='wb') as plotFile:
             self.plotData = csv.writer(plotFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             self.plotData.writerow(['Timestamp', 'Instr ID', 'Channel', 'Value'])
-        with open(self.plumefile, mode='w') as plumeFile:
+        with open(self.plumefile, mode='wb') as plumeFile:
             self.plumeData = csv.writer(plumeFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             self.plumeData.writerow(['Instr ID', 'Plume ID', 'Start Time', 'Stop Time'])
-        with open(self.plumeArea, mode='w') as plumeArea:
+        with open(self.plumeArea, mode='wb') as plumeArea:
             self.plumeAreas = csv.writer(plumeArea, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             self.plumeAreas.writerow(['Plume ID', 'Instr ID', 'Area', 'Units'])
         self.setSummary = True
 
         # timing test
-        with open('timing.csv', mode='w') as timingFile:
+        with open('timing.csv', mode='wb') as timingFile:
             timeData = csv.writer(timingFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             timeData.writerow(['Drawcycle', 'Update Data', 'Cleanup', 'Update Ambient', 'Get Updates', 'Analyze', 'Write Summary', 'Plotting', 'Histograms', 'Plumes'])
 
@@ -86,26 +112,54 @@ class CanvasPanel(wx.Panel):
 
         # setup plot selection
 
-        self.selected_co2_plot = 'LI7000-1-CO2-nan'
-        self.selected_nox_plot = 'CLD64-1-NOx-nan'
-        self.selected_bc_plot = 'AE33-1-BC-nan'
+        if instruments:
+            co2_plots = [x.name for x in self.co2_instr]
+            nox_plots = [x.name for x in self.nox_instr]
+            bc_plots = [x.name for x in self.bc_instr]
+        else:
+            co2_plots = ['LI7000-1-CO2-nan', 'LI820-1-CO2-nan', 'SBA5-1-CO2-nan', 'Vaisala-1-CO2-nan']
+            nox_plots = ['CLD64-1-NOx-nan', 'CAPS-1-NO2-nan']
+            bc_plots = ['AE33-1-BC-nan', 'MA300-1-BC-nan']
+
+        for i in co2_plots:
+            self.co2_chan_names[i] = self.co2_temp
+            self.co2_temp += 1
+        for i in nox_plots:
+            self.nox_chan_names[i] = self.nox_temp
+            self.nox_temp += 1
+        for i in bc_plots:
+            self.bc_chan_names[i] = self.bc_temp
+            self.bc_temp += 1
+
+        if co2_plots:
+            self.selected_co2_plot = co2_plots[0]
+        else:
+            self.selected_co2_plot = None
+        if nox_plots:
+            self.selected_nox_plot = nox_plots[0]
+        else:
+            self.selected_nox_plot = None
+        if bc_plots:
+            self.selected_bc_plot = bc_plots[0]
+        else:
+            self.selected_bc_plot = None
 
         self.menuBar = wx.MenuBar()
         self.co2_menu = wx.Menu()
         self.co2_menu_items = []
-        for i in ['LI7000-1-CO2-nan.csv', 'LI820-1-CO2-nan.csv', 'SBA5-1-CO2-nan.csv', 'Vaisala-1-CO2-nan.csv']:
+        for i in co2_plots:
             item = self.co2_menu.Append(wx.ID_ANY, i.replace('.csv', ''), "", wx.ITEM_RADIO)
             parent.Bind(wx.EVT_MENU, self.co2_select, item)
             self.co2_menu_items.append(item)
         self.nox_menu = wx.Menu()
         self.nox_menu_items = []
-        for i in ['CLD64-1-NOx-nan.csv', 'CAPS-1-NO2-nan.csv']:
+        for i in nox_plots:
             item = self.nox_menu.Append(wx.ID_ANY, i.replace('.csv', ''), "", wx.ITEM_RADIO)
             parent.Bind(wx.EVT_MENU, self.nox_select, item)
             self.nox_menu_items.append(item)
         self.bc_menu = wx.Menu()
         self.bc_menu_items = []
-        for i in ['AE33-1-BC-nan.csv', 'MA300-1-BC-nan.csv']:
+        for i in bc_plots:
             item = self.bc_menu.Append(wx.ID_ANY, i.replace('.csv', ''), "", wx.ITEM_RADIO)
             parent.Bind(wx.EVT_MENU, self.bc_select, item)
             self.bc_menu_items.append(item)
@@ -198,6 +252,7 @@ class CanvasPanel(wx.Panel):
         self.ambient_cs = 5
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.drawEvent, self.timer)
+        time.sleep(5)
         self.timer.Start(200)
         self.Show(True)
 
@@ -217,7 +272,7 @@ class CanvasPanel(wx.Panel):
                 self.selected_bc_plot = i.GetName()
 
     def setupSummary(self):
-        with open(self.summaryfile, mode='w') as summaryFile:
+        with open(self.summaryfile, mode='wb') as summaryFile:
             self.summary = csv.writer(summaryFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             header = ['Timestamp']
             co2_names = dict((v,k) for k,v in self.co2_chan_names.iteritems())
@@ -232,6 +287,7 @@ class CanvasPanel(wx.Panel):
             self.summary.writerow(header)
 
     def draw(self):
+
         drawCycle = time.time()
         row = [drawCycle]
 
@@ -267,15 +323,37 @@ class CanvasPanel(wx.Panel):
 
 
         # current plotted data
-        self.co2_updates = []
-        self.nox_updates = []
-        self.bc_updates = []
-        for i in range(self.co2_chans):
-            self.co2_updates.append(zip(*[[(current_time - x[0]).total_seconds(), x[1], x[0]] for x in self.co2_data if x[2] == i]))
-        for i in range(self.bc_chans):
-            self.bc_updates.append(zip(*[[(current_time - x[0]).total_seconds(), x[1], x[0]] for x in self.bc_data if x[2] == i]))
-        for i in range(self.nox_chans):
-            self.nox_updates.append(zip(*[[(current_time - x[0]).total_seconds(), x[1], x[0]] for x in self.nox_data if x[2] == i]))
+        self.co2_updates = {}
+        self.nox_updates = {}
+        self.bc_updates = {}
+        for x in self.co2_data:
+            dp = [(current_time - x[0]).total_seconds(), x[1], x[0]]
+            if x[2] in self.co2_updates:
+                self.co2_updates[x[2]].append(dp)
+            else:
+                self.co2_updates[x[2]] = []
+                self.co2_updates[x[2]].append(dp)
+        for x in self.bc_data:
+            dp = [(current_time - x[0]).total_seconds(), x[1], x[0]]
+            if x[2] in self.bc_updates:
+                self.bc_updates[x[2]].append(dp)
+            else:
+                self.bc_updates[x[2]] = []
+                self.bc_updates[x[2]].append(dp)
+        for x in self.nox_data:
+            dp = [(current_time - x[0]).total_seconds(), x[1], x[0]]
+            if x[2] in self.nox_updates:
+                self.nox_updates[x[2]].append(dp)
+            else:
+                self.nox_updates[x[2]] = []
+                self.nox_updates[x[2]].append(dp)
+
+        # for i in range(self.co2_chans):
+        #     self.co2_updates.append(zip(*[[(current_time - x[0]).total_seconds(), x[1], x[0]] for x in self.co2_data if x[2] == i]))
+        # for i in range(self.bc_chans):
+        #     self.bc_updates.append(zip(*[[(current_time - x[0]).total_seconds(), x[1], x[0]] for x in self.bc_data if x[2] == i]))
+        # for i in range(self.nox_chans):
+        #     self.nox_updates.append(zip(*[[(current_time - x[0]).total_seconds(), x[1], x[0]] for x in self.nox_data if x[2] == i]))
 
         getUpdate = time.time()
         row.append(getUpdate - cleanupData)
@@ -303,12 +381,22 @@ class CanvasPanel(wx.Panel):
         
 
         current_time = datetime.datetime.now()
-        selected_co2_id = self.getIdByName(self.selected_co2_plot, 'CO2')
-        selected_nox_id = self.getIdByName(self.selected_nox_plot, 'NOX')
-        selected_bc_id = self.getIdByName(self.selected_bc_plot, 'BC')
-        co2_update = self.co2_updates[selected_co2_id]
-        nox_update = self.nox_updates[selected_nox_id]
-        bc_update = self.bc_updates[selected_bc_id]
+        if self.selected_co2_plot:
+            selected_co2_id = self.getIdByName(self.selected_co2_plot, 'CO2')
+            co2_update = zip(*self.co2_updates[selected_co2_id])
+        else:
+            co2_update = None
+        if self.selected_nox_plot:
+            selected_nox_id = self.getIdByName(self.selected_nox_plot, 'NOX')
+            nox_update = zip(*self.nox_updates[selected_nox_id])
+        else:
+            nox_update = None
+        if self.selected_bc_plot:
+            selected_bc_id = self.getIdByName(self.selected_bc_plot, 'BC')
+            bc_update = zip(*self.bc_updates[selected_bc_id])
+        else:
+            bc_update = None
+        
         if co2_update:
             self.co2_axes.plot(co2_update[0], co2_update[1], c='r', linewidth=1.0)
             if self.co2_ambient[selected_co2_id]:
@@ -348,15 +436,15 @@ class CanvasPanel(wx.Panel):
         plumeage = time.time()
         row.append(plumeage - histogram)
 
-        with open('timing.csv', mode='a') as timingFile:
+        with open('timing.csv', mode='ab') as timingFile:
             timeData = csv.writer(timingFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             timeData.writerow(row)
             
-        if self.co2_ambient[selected_co2_id]:
+        if self.selected_co2_plot and self.co2_ambient[selected_co2_id]:
             self.co2_axes.text(60, 1650, "Ambient CO2 (ppm): {:.2f}".format(self.co2_ambient[selected_co2_id][0][1]), fontsize=11, bbox={'facecolor': 'red', 'alpha': 0.5, 'pad': 6})
-        if self.nox_ambient[selected_nox_id]:
+        if self.selected_nox_plot and self.nox_ambient[selected_nox_id]:
             self.nox_axes.text(60, 28, "Ambient NOX (ppb): {:.2f}".format(self.nox_ambient[selected_nox_id][0][1]), fontsize=11, bbox={'facecolor': 'red', 'alpha': 0.5, 'pad': 6})
-        if self.bc_ambient[selected_bc_id]:
+        if self.selected_bc_plot and self.bc_ambient[selected_bc_id]:
             self.bc_axes.text(60, 28, r"Ambient BC ($\mu g/m^3$): {:.2f}".format(self.bc_ambient[selected_bc_id][0][1]), fontsize=11, bbox={'facecolor': 'red', 'alpha': 0.5, 'pad': 4})
         self.Show(True)
         self.canvas.draw()
@@ -386,7 +474,7 @@ class CanvasPanel(wx.Panel):
                 to_analyze.append((k, v))
         to_analyze.sort(key=operator.itemgetter(0))
         for k, v in to_analyze:
-            co2_vals = v['co2'][self.primary_co2instr]
+            co2_vals = v['CO2'][self.primary_co2instr]
             co2_value = self.average_list(co2_vals)
             if co2_value:
                 if co2_value >= 750:
@@ -409,7 +497,7 @@ class CanvasPanel(wx.Panel):
 
         plume_markers = [plume_markers[0], plume_markers[1] + datetime.timedelta(seconds=1)]
 
-        co2_plot = zip(*[x for x in zip(*self.co2_updates[self.primary_co2instr]) if plume_markers[0] <= x[2] <= plume_markers[1]])
+        co2_plot = zip(*[x for x in self.co2_updates[self.primary_co2instr] if plume_markers[0] <= x[2] <= plume_markers[1]])
         co2_plot = [x[::-1] for x in co2_plot]
         co2am_plot = zip(*[[(current_time - x[0]).total_seconds(), x[1]] for x in self.co2_ambient[self.primary_co2instr] if plume_markers[0] <= x[0] <= plume_markers[1]])
         co2am_plot = [x[::-1] for x in co2am_plot]
@@ -422,7 +510,7 @@ class CanvasPanel(wx.Panel):
         areas_post.append([self.plume_counter, self.co2_chan_names[self.primary_co2instr], co2_calc_area, 'ppm-co2-s'])
 
         for i in range(self.nox_chans):
-            nox_plot = zip(*[x for x in zip(*self.nox_updates[i]) if plume_markers[0] <= x[2] <= plume_markers[1]])
+            nox_plot = zip(*[x for x in self.nox_updates[i] if plume_markers[0] <= x[2] <= plume_markers[1]])
             nox_plot = [x[::-1] for x in nox_plot]
             noxam_plot = zip(*[[(current_time - x[0]).total_seconds(), x[1]] for x in self.nox_ambient[i] if plume_markers[0] <= x[0] <= plume_markers[1]])
             noxam_plot = [x[::-1] for x in noxam_plot]
@@ -440,7 +528,7 @@ class CanvasPanel(wx.Panel):
             self.nox_histogram[i].append(nox_histogram_val)
 
         for i in range(self.bc_chans):
-            bc_plot = zip(*[x for x in zip(*self.bc_updates[i]) if plume_markers[0] <= x[2] <= plume_markers[1]])
+            bc_plot = zip(*[x for x in self.bc_updates[i] if plume_markers[0] <= x[2] <= plume_markers[1]])
             bc_plot = [x[::-1] for x in bc_plot]
             bcam_plot = zip(*[[(current_time - x[0]).total_seconds(), x[1]] for x in self.bc_ambient[i] if plume_markers[0] <= x[0] <= plume_markers[1]])
             bcam_plot = [x[::-1] for x in bcam_plot]
@@ -457,7 +545,7 @@ class CanvasPanel(wx.Panel):
             bc_histogram_val = bc_calc_area / co2_calc_area
             self.bc_histogram[i].append(bc_histogram_val)
 
-        with open(self.plumeArea, 'a') as plumeAreas:
+        with open(self.plumeArea, mode='ab') as plumeAreas:
             writer = csv.writer(plumeAreas, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             writer.writerows(areas_post)
 
@@ -465,7 +553,7 @@ class CanvasPanel(wx.Panel):
 
     def write_plume(self, timestamps):
         self.plumes.append(timestamps)
-        with open(self.plumefile, 'a') as plumeFile:
+        with open(self.plumefile, mode='ab') as plumeFile:
             writer = csv.writer(plumeFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             for i in range(self.co2_chans):
                 if i != self.primary_co2instr:
@@ -493,7 +581,7 @@ class CanvasPanel(wx.Panel):
                 for i in range(self.bc_chans):
                     post.append(self.average_list(v['BC'][i]))
                 csv_post.append(post)
-        with open(self.summaryfile, 'a') as summaryFile:
+        with open(self.summaryfile, mode='ab') as summaryFile:
                 writer = csv.writer(summaryFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
                 writer.writerows(csv_post)
 
@@ -519,15 +607,6 @@ class CanvasPanel(wx.Panel):
         csv_post = []
         while not self.queue.empty():
             item = self.queue.get()
-            if item[0][1] == 'CO2' and item[0][0] not in self.co2_chan_names:
-                self.co2_chan_names[item[0][0]] = self.co2_temp
-                self.co2_temp += 1
-            elif item[0][1] == 'NOX' and item[0][0] not in self.nox_chan_names:
-                self.nox_chan_names[item[0][0]] = self.nox_temp
-                self.nox_temp += 1
-            elif item[0][1] == 'BC' and item[0][0] not in self.bc_chan_names:
-                self.bc_chan_names[item[0][0]] = self.bc_temp
-                self.bc_temp += 1
             csv_post.append([item[1][1], item[0][0], item[0][1], item[1][0]])
             if item[0][1] == 'CO2':
                 self.co2_data.append([item[1][1], item[1][0], self.getIdByName(item[0][0], item[0][1])])
@@ -538,7 +617,7 @@ class CanvasPanel(wx.Panel):
             else:
                 print('error bad send')
             self.align_ts(item, item[0][1])
-        with open(self.plotfile, 'a') as plotFile:
+        with open(self.plotfile, mode='ab') as plotFile:
             writer = csv.writer(plotFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             writer.writerows(csv_post)
 
@@ -623,24 +702,24 @@ class CanvasPanel(wx.Panel):
     def nearest_vals(self, timestamp):
         seconds = 1
         sign = True
-        ret = {'co2':{}, 'nox':{}, 'bc':{}}
+        ret = {'CO2':{}, 'NOX':{}, 'BC':{}}
         for i in range(self.co2_chans):
-            ret['co2'][i] = False
+            ret['CO2'][i] = False
         for i in range(self.nox_chans):
-            ret['nox'][i] = False
+            ret['NOX'][i] = False
         for i in range(self.bc_chans):
-            ret['bc'][i] = False
+            ret['BC'][i] = False
         while self.notFull(ret):
             if timestamp in self.ts_aligned_dps:
                 for i in range(self.co2_chans):
-                    if self.ts_aligned_dps[timestamp]['co2'][i]:
-                        ret['co2'][i] = self.average_list(self.ts_aligned_dps[timestamp]['co2'][i])
+                    if self.ts_aligned_dps[timestamp]['CO2'][i]:
+                        ret['CO2'][i] = self.average_list(self.ts_aligned_dps[timestamp]['CO2'][i])
                 for i in range(self.bc_chans):
-                    if self.ts_aligned_dps[timestamp]['bc'][i]:
-                        ret['bc'][i] = self.average_list(self.ts_aligned_dps[timestamp]['bc'][i])
+                    if self.ts_aligned_dps[timestamp]['BC'][i]:
+                        ret['BC'][i] = self.average_list(self.ts_aligned_dps[timestamp]['BC'][i])
                 for i in range(self.nox_chans):
-                    if self.ts_aligned_dps[timestamp]['nox'][i]:
-                        ret['nox'][i] = self.average_list(self.ts_aligned_dps[timestamp]['nox'][i])
+                    if self.ts_aligned_dps[timestamp]['NOX'][i]:
+                        ret['NOX'][i] = self.average_list(self.ts_aligned_dps[timestamp]['NOX'][i])
             if sign:
                 timestamp = timestamp + datetime.timedelta(seconds=seconds)
             else: 
@@ -651,13 +730,13 @@ class CanvasPanel(wx.Panel):
         
     def notFull(self, d):
         for i in range(self.co2_chans):
-            if d['co2'][i] == False:
+            if d['CO2'][i] == False:
                 return True
         for i in range(self.nox_chans):
-            if d['nox'][i] == False:
+            if d['NOX'][i] == False:
                 return True
         for i in range(self.bc_chans):
-            if d['bc'][i] == False:
+            if d['BC'][i] == False:
                 return True
         return False
 
@@ -675,11 +754,11 @@ class CanvasPanel(wx.Panel):
             if (current_time - k).total_seconds() >= 90 and (current_time - k).total_seconds() <= 180:
                 if v['plume'] == False:
                     for i in range(self.co2_chans):
-                        co2_amvals[i].extend(v['co2'][i])
+                        co2_amvals[i].extend(v['CO2'][i])
                     for i in range(self.bc_chans):
-                        bc_amvals[i].extend(v['bc'][i])
+                        bc_amvals[i].extend(v['BC'][i])
                     for i in range(self.nox_chans):
-                        nox_amvals[i].extend(v['nox'][i])
+                        nox_amvals[i].extend(v['NOX'][i])
         rows = []
         for i in range(self.co2_chans):
             if co2_amvals[i]:
@@ -696,68 +775,15 @@ class CanvasPanel(wx.Panel):
                 am_value = self.average_list(nox_amvals[i])
                 rows.append([ambient_time, i, 'NOX_ambient', am_value])
                 self.nox_ambient[i].append([ambient_time, am_value])
-        with open(self.plotfile, 'a') as plotFile:
+        with open(self.plotfile, mode='ab') as plotFile:
             writer = csv.writer(plotFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             writer.writerows(rows)
-
-    # def update_ambient(self):
-    #     current_time = datetime.datetime.now()
-    #     ambient_time = current_time - datetime.timedelta(seconds=90)
-    #     nearest = self.nearest_vals(self.floor_dt(ambient_time))
-    #     co2_amvals, bc_amvals, nox_amvals = {}, {}, {}
-    #     for i in range(self.co2_chans):
-    #         co2_amvals[i] = []
-    #     for i in range(self.bc_chans):
-    #         bc_amvals[i] = []
-    #     for i in range(self.nox_chans):
-    #         nox_amvals[i] = []
-    #     for k, v in self.ts_aligned_dps.items():
-    #         if (current_time - k).total_seconds() >= 90 and (current_time - k).total_seconds() <= 180:
-    #             if v['plume'] == False:
-    #                 for i in range(self.co2_chans):
-    #                     co2_amvals[i].extend(v['co2'][i])
-    #                 for i in range(self.bc_chans):
-    #                     bc_amvals[i].extend(v['bc'][i])
-    #                 for i in range(self.nox_chans):
-    #                     nox_amvals[i].extend(v['nox'][i])
-    #     rows = []
-    #     for i in range(self.co2_chans):
-    #         if co2_amvals[i]:
-    #             am_value = self.average_list(co2_amvals[i])
-    #             rows.append([ambient_time, i, 'CO2_ambient', am_value])
-    #             self.co2_ambient[i].append([ambient_time, am_value, nearest['co2'][i]])
-    #     for i in range(self.bc_chans):
-    #         if bc_amvals[i]:
-    #             am_value = self.average_list(bc_amvals[i])
-    #             rows.append([ambient_time, i, 'BC_ambient', am_value])
-    #             self.bc_ambient[i].append([ambient_time, am_value, nearest['bc'][i]])
-    #     for i in range(self.nox_chans):
-    #         if nox_amvals[i]:
-    #             am_value = self.average_list(nox_amvals[i])
-    #             rows.append([ambient_time, i, 'NOX_ambient', am_value])
-    #             self.nox_ambient[i].append([ambient_time, am_value, nearest['nox'][i]])
-    #     with open(self.plotfile, 'a') as plotFile:
-    #         writer = csv.writer(plotFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-    #         writer.writerows(rows)
 
     def floor_dt(self, dt):
         return datetime.datetime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second)
 
 q = Queue()
 
-co2 = Process(target=co2.send, args=(q,))
-co2.daemon = True
-co2.start()
-nox = Process(target=nox.send, args=(q,))
-nox.daemon = True
-nox.start()
-bc = Process(target=bc.send, args=(q,))
-bc.daemon = True
-bc.start()
-
-# data_ac = Process(target=data_ac.main_wrapper, args=(q,))
-# data_ac.daemon = True
-# data_ac.start()
 
 def sig_handler(signum, frame):
     sys.stdout.write("handling signal: %s\n" % signum)
@@ -766,27 +792,39 @@ def sig_handler(signum, frame):
     global stop_requested
     stop_requested = True
 
-def main():
-
-    # Get instr dict from data_ac.py by queue before starting
-
+def main(instr):
     # Setup signal handler to allow for exiting on Keyboard Interrupt (Ctrl +C)
     signal.signal(signal.SIGTERM, sig_handler)
     signal.signal(signal.SIGINT, sig_handler)
 
     app = wx.App()
-    f = ComplexPlot(q)
+
+    if instr:
+        q.put(filepath)
+        data_ac = Process(target=d_ac.main_wrapper, args=(q,))
+        data_ac.start()
+
+        # Get instr dict from data_ac.py by queue before starting
+        time.sleep(0.5)
+        instruments = q.get()
+
+        f = ComplexPlot(q, instruments)
+    else:
+        co2 = Process(target=c.send, args=(q,))
+        co2.daemon = True
+        co2.start()
+        nox = Process(target=n.send, args=(q,))
+        nox.daemon = True
+        nox.start()
+        bc = Process(target=b.send, args=(q,))
+        bc.daemon = True
+        bc.start()
+        f = ComplexPlot(q)
+    
     app.MainLoop()
     co2.join()
     nox.join()
     bc.join()
-
-    # test
-    # while not stop_requested:
-    #     time.sleep(2)
-    #     while not q.empty():
-    #         item = q.get()
-    #         print(item)
 
 
 
