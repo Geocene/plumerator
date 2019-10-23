@@ -685,15 +685,15 @@ class CanvasPanel(wx.Panel):
         plot.set_xlim([120, 0])
         plot.xaxis.set_ticks(np.arange(0, 210, 30))
         if name == 'CO2':
-            plot.set_ylim([-100, 1500])
+            plot.set_ylim([-100, 2000])
             plot.set_title('CO2')
             plot.set_ylabel('ppm')
         elif name == 'NOX':
-            plot.set_ylim([-5, 25])
+            plot.set_ylim([-5, 5])
             plot.set_title('NOX')
             plot.set_ylabel('ppb')
         elif name == 'BC':
-            plot.set_ylim([-5, 25])
+            plot.set_ylim([-5, 100])
             plot.set_title('BC')
             plot.set_ylabel(r'$\mu g/m^3$')
             plot.set_xlabel('seconds ago')

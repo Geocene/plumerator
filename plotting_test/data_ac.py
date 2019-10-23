@@ -48,6 +48,7 @@ class Instrument(object):
 			rawData = csv.writer(rawFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
 			rawData.writerow([dt, self.name, self.serial_num, ser])
 			fcntl.flock(rawFile, fcntl.LOCK_UN)
+		return
 
 	def run(self, queue):
 		while not stop_requested:
@@ -64,11 +65,11 @@ class Instrument(object):
 # BC Instr
 
 class AE33_Instrument(Instrument):
-	def __init__(self):
+	def __init__(self, sn):
 		self.name = 'AE33'
 		self.v_type = 'BC'
-		self.serial_num = 'FTXP6UA4'
-		super(AE33_Instrument, self).__init__('/dev/cu.usbserial-FTXP6UA4', 9600)
+		self.serial_num = sn
+		super(AE33_Instrument, self).__init__('/dev/cu.usbserial-' + self.serial_num, 9600)
 
 	def get_values(self):
 		bc_values = []
@@ -91,11 +92,11 @@ class AE33_Instrument(Instrument):
 		return bc_values
 
 class AE16_Instrument(Instrument):
-	def __init__(self):
+	def __init__(self, sn):
 		self.name = 'AE16'
 		self.v_type = 'BC'
-		self.serial_num = 'FTXP9NHN'
-		super(AE16_Instrument, self).__init__('/dev/cu.usbserial-FTXP9NHN', 9600)
+		self.serial_num = sn
+		super(AE16_Instrument, self).__init__('/dev/cu.usbserial-' + self.serial_num, 9600)
 
 	def get_values(self):
 		bc_values = []
@@ -127,7 +128,11 @@ class ABCD_Instrument(Instrument):
 		self.name = 'ABCD'
 		self.v_type = 'BC'
 		self.serial_num = serial_num
-		super(ABCD_Instrument, self).__init__('/dev/cu.wchusbserial' + self.serial_num, 57600)
+		if 'wchusbserial' in self.serial_num:
+			path = '/dev/cu.' + self.serial_num
+		else:
+			path = '/dev/cu.usbserial-' + self.serial_num
+		super(ABCD_Instrument, self).__init__(path, 57600)
 
 	def get_values(self):
 		bc_values = []
@@ -156,11 +161,11 @@ class ABCD_Instrument(Instrument):
 		return bc_values
 
 class MA300_Instrument(Instrument):
-	def __init__(self):
+	def __init__(self, sn):
 		self.name = 'MA300'
 		self.v_type = 'BC'
-		self.serial_num = 'FT0HCK2R'
-		super(MA300_Instrument, self).__init__('/dev/cu.usbserial-FT0HCK2R', 1000000)
+		self.serial_num = sn
+		super(MA300_Instrument, self).__init__('/dev/cu.usbserial-' + self.serial_num, 1000000)
 
 	def get_values(self):
 		bc_values = []
@@ -190,11 +195,11 @@ class MA300_Instrument(Instrument):
 
 # CO2 Instr
 class LI7000_Instrument(Instrument):
-	def __init__(self):
+	def __init__(self, sn):
 		self.name = 'LI7000'
 		self.v_type = 'CO2'
-		self.serial_num = 'FTE4W8JS'
-		super(LI7000_Instrument, self).__init__('/dev/cu.usbserial-FTE4W8JS', 9600)
+		self.serial_num = sn
+		super(LI7000_Instrument, self).__init__('/dev/cu.usbserial-' + self.serial_num, 9600)
 
 	def get_values(self):
 		co2_values = []
@@ -219,11 +224,11 @@ class LI7000_Instrument(Instrument):
 		return co2_values
 
 class LI820_Instrument(Instrument):
-	def __init__(self):
+	def __init__(self, sn):
 		self.name = 'LI820'
 		self.v_type = 'CO2'
-		self.serial_num = 'FTXP9HEV'
-		super(LI820_Instrument, self).__init__('/dev/cu.usbserial-FTXP9HEV', 9600)
+		self.serial_num = sn
+		super(LI820_Instrument, self).__init__('/dev/cu.usbserial-' + self.serial_num, 9600)
 
 	def get_values(self):
 		co2_values = []
@@ -246,11 +251,11 @@ class LI820_Instrument(Instrument):
 		return co2_values
 
 class SBA5_Instrument(Instrument):
-	def __init__(self):
+	def __init__(self, sn):
 		self.name = 'SBA5'
 		self.v_type = 'CO2'
-		self.serial_num = 'DN03Y92G'
-		super(SBA5_Instrument, self).__init__('/dev/cu.usbserial-DN03Y92G', 19200)
+		self.serial_num = sn
+		super(SBA5_Instrument, self).__init__('/dev/cu.usbserial-' + self.serial_num, 19200)
 
 	def get_values(self):
 		co2_values = []
@@ -277,12 +282,16 @@ class SBA5_Instrument(Instrument):
 		return co2_values
 
 class VCO2_Instrument(Instrument):
-	def __init__(self):
+	def __init__(self, sn=''):
 		self.name = 'Vaisala'
 		self.v_type = 'CO2'
-		self.serial_num = ''
+		self.serial_num = sn
 		self.setup = True
-		super(VCO2_Instrument, self).__init__('/dev/cu.usbserial', 19200)
+		if self.serial_num:
+			path = '/dev/cu.usbserial-' + self.serial_num
+		else:
+			path = '/dev/cu.usbserial'
+		super(VCO2_Instrument, self).__init__(path, 19200)
 
 	def get_values(self):
 		if self.setup:
@@ -311,11 +320,11 @@ class VCO2_Instrument(Instrument):
 		return co2_values
 
 class K30_Instrument(Instrument):
-	def __init__(self):
+	def __init__(self, sn):
 		self.name = 'K30'
 		self.v_type = 'CO2'
-		self.serial_num = 'AH06VSA4'
-		self.serial = serial.Serial(port='/dev/cu.usbserial-AH06VSA4', baudrate=9600, timeout=0.5)
+		self.serial_num = sn
+		self.serial = serial.Serial(port='/dev/cu.usbserial-' + self.serial_num, baudrate=9600, timeout=0.5)
 		self.serial.flushInput()
 		time.sleep(1)
 		super(K30_Instrument, self).__init__(None, 9600)
@@ -347,11 +356,11 @@ class K30_Instrument(Instrument):
 
 # NOX Instr
 class UCB_Instrument(Instrument):
-	def __init__(self):
+	def __init__(self, sn):
 		self.name = 'UCB'
 		self.v_type = 'NOX'
-		self.serial_num = 'FTXP9VNO'
-		self.serial = serial.Serial(port='/dev/cu.usbserial-FTXP9VNO', baudrate=9600, timeout=1, bytesize=serial.SEVENBITS)
+		self.serial_num = sn
+		self.serial = serial.Serial(port='/dev/cu.usbserial-' + self.serial_num, baudrate=9600, timeout=1, bytesize=serial.SEVENBITS)
 		super(UCB_Instrument, self).__init__(None, 9600)
 
 	def get_values(self):
@@ -377,11 +386,11 @@ class UCB_Instrument(Instrument):
 		return nox_values
 
 class CAPS_Instrument(Instrument):
-	def __init__(self):
+	def __init__(self, sn):
 		self.name = 'CAPS'
 		self.v_type = 'NOX'
-		self.serial_num = 'FTXPC1N7'
-		super(CAPS_Instrument, self).__init__('/dev/cu.usbserial-FTXPC1N7', 9600)
+		self.serial_num = sn
+		super(CAPS_Instrument, self).__init__('/dev/cu.usbserial-' + self.serial_num, 9600)
 
 	def get_values(self):
 		nox_values = []
@@ -419,15 +428,17 @@ def main_wrapper(q):
 		rawData.writerow(['Timestamp', 'Instr', 'S#', 'Message'])
 
 	comport_dict = {
-		'FTXP6UA4': AE33_Instrument, 
+		'FTXP6UA4': AE33_Instrument,
 		'FTXP9NHN': AE16_Instrument,
 		'wchusbserial': ABCD_Instrument,
+		# '142140': ABCD_Instrument,
 		'FT0HCK2R': MA300_Instrument,
-		'FTE4W8JS': LI7000_Instrument,
+		'FTE4W8JS': LI7000_Instrument, 
 		'FTXP9HEV': LI820_Instrument,
 		'DN03Y92G': SBA5_Instrument,
 		'Vaisala':VCO2_Instrument,
-		'FTXP9VNO': UCB_Instrument, # CLD64
+		'142340':VCO2_Instrument,
+		'FTXP9VNO': UCB_Instrument, # CLD64 
 		'FTXPC1N7': CAPS_Instrument,
 		'AH06VSA4': K30_Instrument
 		}
@@ -444,12 +455,12 @@ def main_wrapper(q):
 		if comport_pattern.match(element.device):
 			try:
 				sn = element.device.split('/dev/cu.usbserial-')[1]
-				comport_dict[sn]()
-			except IndexError:
+				comport_dict[sn](sn)
+			except KeyError, IndexError:
 				if element.device == '/dev/cu.usbserial':
 					comport_dict['Vaisala']()
 		elif '/dev/cu.wchusbserial' in element.device:
-			sn = element.device.split('/dev/cu.wchusbserial')[1]
+			sn = element.device.split('/dev/cu.')[1]
 			comport_dict['wchusbserial'](sn)
 
 	print(('instruments', instruments))
@@ -469,15 +480,17 @@ def main_wrapper(q):
 
 def main():
 	comport_dict = {
-		'FTXP6UA4': AE33_Instrument, 
+		'FTXP6UA4': AE33_Instrument,
 		'FTXP9NHN': AE16_Instrument,
 		'wchusbserial': ABCD_Instrument,
+		# '142140': ABCD_Instrument,
 		'FT0HCK2R': MA300_Instrument,
-		'FTE4W8JS': LI7000_Instrument,
+		'FTE4W8JS': LI7000_Instrument, 
 		'FTXP9HEV': LI820_Instrument,
 		'DN03Y92G': SBA5_Instrument,
 		'Vaisala':VCO2_Instrument,
-		'FTXP9VNO': UCB_Instrument, # CLD64
+		'142340':VCO2_Instrument,
+		'FTXP9VNO': UCB_Instrument, # CLD64 
 		'FTXPC1N7': CAPS_Instrument,
 		'AH06VSA4': K30_Instrument
 		}
@@ -494,12 +507,12 @@ def main():
 		if comport_pattern.match(element.device):
 			try:
 				sn = element.device.split('/dev/cu.usbserial-')[1]
-				comport_dict[sn]()
-			except IndexError:
+				comport_dict[sn](sn)
+			except KeyError, IndexError:
 				if element.device == '/dev/cu.usbserial':
 					comport_dict['Vaisala']()
 		elif '/dev/cu.wchusbserial' in element.device:
-			sn = element.device.split('/dev/cu.wchusbserial')[1]
+			sn = element.device.split('/dev/cu.')[1]
 			comport_dict['wchusbserial'](sn)
 
 	print(instruments)
