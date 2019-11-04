@@ -12,6 +12,7 @@ import co2 as c
 import nox as n
 import bc as b
 import data_ac as d_ac
+import reup_raw as re_r
 import datetime
 import operator
 import signal
@@ -39,9 +40,9 @@ time_hash = hash.hexdigest()[:10] + '/'
 filepath = os.getcwd() + output_dir + time_hash
 
 class ComplexPlot(wx.Frame):
-    def __init__(self, queue, instruments=None):
+    def __init__(self, queue, instruments=None, mode=None):
         wx.Frame.__init__(self, None, wx.ID_ANY, title='Plotter', size=(500, 750))
-        self.panel = CanvasPanel(self, queue, instruments)
+        self.panel = CanvasPanel(self, queue, instruments, mode)
 
         sizer = wx.BoxSizer(wx.VERTICAL)
         sizer.Add(self.panel,1,wx.EXPAND)
@@ -50,21 +51,17 @@ class ComplexPlot(wx.Frame):
         self.Show(True)
 
 class CanvasPanel(wx.Panel):
-    def __init__(self, parent, queue, instruments):
+    def __init__(self, parent, queue, instruments, mode):
+        # set mode - 'i' = Instrument, 'r' = Reupload, 't' = Test
+        self.mode = mode
 
-        if instruments:
-            self.instruments = instruments[1]
-            self.co2_instr = [x for x in self.instruments if x.v_type == 'CO2']
-            self.bc_instr = [x for x in self.instruments if x.v_type == 'BC']
-            self.nox_instr = [x for x in self.instruments if x.v_type == 'NOX']
-            self.co2_chans = len(self.co2_instr)
-            self.bc_chans = len(self.bc_instr)
-            self.nox_chans = len(self.nox_instr)
-        else:
-            # set # of channels and line colors
-            self.co2_chans = 4
-            self.bc_chans = 2
-            self.nox_chans = 2
+        self.instruments = instruments[1]
+        self.co2_instr = [x for x in self.instruments if x.v_type == 'CO2']
+        self.bc_instr = [x for x in self.instruments if x.v_type == 'BC']
+        self.nox_instr = [x for x in self.instruments if x.v_type == 'NOX']
+        self.co2_chans = len(self.co2_instr)
+        self.bc_chans = len(self.bc_instr)
+        self.nox_chans = len(self.nox_instr)
 
         self.co2_chan_names = {}
         self.bc_chan_names = {}
@@ -73,9 +70,7 @@ class CanvasPanel(wx.Panel):
         self.nox_temp = 0
         self.bc_temp = 0
 
-
-        # set primary co2 instrument and plume counter
-        self.primary_co2instr = 0 
+        # set plume counter
         self.plume_counter = 1
 
         # create and write headers of output files
@@ -92,6 +87,7 @@ class CanvasPanel(wx.Panel):
         self.plumefile = self.filepath + 'plumes.csv'
         self.plumeArea = self.filepath + 'plume_areas.csv'
         self.summaryfile = self.filepath + 'secondly_data.csv'
+        self.instrumentfile = self.filepath + 'instruments.csv'
         with open(self.plotfile, mode='wb') as plotFile:
             self.plotData = csv.writer(plotFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             self.plotData.writerow(['Timestamp', 'Instr ID', 'Channel', 'Value'])
@@ -111,15 +107,9 @@ class CanvasPanel(wx.Panel):
         wx.Panel.__init__(self, parent)
 
         # setup plot selection
-
-        if instruments:
-            co2_plots = [x.name for x in self.co2_instr]
-            nox_plots = [x.name for x in self.nox_instr]
-            bc_plots = [x.name for x in self.bc_instr]
-        else:
-            co2_plots = ['LI7000-1-CO2-nan', 'LI820-1-CO2-nan', 'SBA5-1-CO2-nan', 'Vaisala-1-CO2-nan']
-            nox_plots = ['CLD64-1-NOx-nan', 'CAPS-1-NO2-nan']
-            bc_plots = ['AE33-1-BC-nan', 'MA300-1-BC-nan']
+        co2_plots = [x.name for x in self.co2_instr]
+        nox_plots = [x.name for x in self.nox_instr]
+        bc_plots = [x.name for x in self.bc_instr]
 
         for i in co2_plots:
             self.co2_chan_names[i] = self.co2_temp
@@ -130,6 +120,21 @@ class CanvasPanel(wx.Panel):
         for i in bc_plots:
             self.bc_chan_names[i] = self.bc_temp
             self.bc_temp += 1
+
+        # set primary co2 instrument
+        self.primary_co2instr = self.getIdByName('LI7000', 'CO2')
+        if not self.primary_co2instr:
+            self.primary_co2instr = self.getIdByName('LI7000-1-CO2-nan', 'CO2')
+
+        with open(self.instrumentfile, mode='wb') as instrFile:
+            self.instrumentWriter = csv.writer(instrFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            self.instrumentWriter.writerow(['Instr ID', 'Channel'])
+            for i in co2_plots:
+                self.instrumentWriter.writerow([i, 'CO2'])
+            for i in nox_plots:
+                self.instrumentWriter.writerow([i, 'NOX'])
+            for i in bc_plots:
+                self.instrumentWriter.writerow([i, 'BC'])
 
         if co2_plots:
             self.selected_co2_plot = co2_plots[0]
@@ -167,6 +172,14 @@ class CanvasPanel(wx.Panel):
         self.menuBar.Append(self.nox_menu, "NOX Plot")
         self.menuBar.Append(self.bc_menu, "BC Plot")
 
+        # Settings bar - change PIP and set output dir name
+        self.settings_menu = wx.Menu()
+        set_pip = self.settings_menu.Append(wx.ID_ANY, 'Set PIP', "")
+        parent.Bind(wx.EVT_MENU, self.set_pip, set_pip)
+        self.settings_menu_items = [set_pip]
+
+        self.menuBar.Append(self.settings_menu, "Settings")
+
         
         parent.SetMenuBar(self.menuBar)
 
@@ -202,13 +215,28 @@ class CanvasPanel(wx.Panel):
         self.replot_hists = False
 
         # time correction
-        self.time_correction = {'CO2':{},'NOX':{},'BC':{}}
-        for i in range(self.co2_chans):
-            self.time_correction['CO2'][i] = {'tof':None, 'rt':None}
-        for i in range(self.nox_chans):
-            self.time_correction['NOX'][i] = {'tof':None, 'rt':None}
-        for i in range(self.bc_chans):
-            self.time_correction['BC'][i] = {'tof':None, 'rt':None}
+        self.pip = {'CO2':{},'NOX':{},'BC':{}}
+        if self.mode == 'i':
+            # setup with default pip values
+            # Instr - start_lag, stop_lag
+            # ABCD - 4s, 9s
+            # AE16 - 1s, 0s
+            # AE33 - 1s, 8s
+            # MA300 - 4s, 25s
+            # K30 - 0s, 6s
+            # LI7000 - 0s, 0s
+            # LI820 - 1s, -1s
+            # Vaisala - 6s, 25s
+            # CAPS - 2s, 2s
+            # UCB - 2s, 0s
+            pass
+        else:
+            for i in range(self.co2_chans):
+                self.pip['CO2'][i] = {'start_lag':None, 'stop_lag':None}
+            for i in range(self.nox_chans):
+                self.pip['NOX'][i] = {'start_lag':None, 'stop_lag':None}
+            for i in range(self.bc_chans):
+                self.pip['BC'][i] = {'start_lag':None, 'stop_lag':None}
 
         self.co2_axes = self.figure.add_subplot(self.gridspec[0, 0])
         self.reset_data(self.co2_axes, 'CO2')
@@ -270,6 +298,13 @@ class CanvasPanel(wx.Panel):
         for i in self.bc_menu_items:
             if i.IsChecked():
                 self.selected_bc_plot = i.GetName()
+
+    def set_pip(self, event):
+        dlg = wx.TextEntryDialog(self, 'Enter new pip values:',"Edit PIP","", 
+                style=wx.OK)
+        dlg.ShowModal()
+        value = float(dlg.GetValue())
+        dlg.Destroy()
 
     def setupSummary(self):
         with open(self.summaryfile, mode='wb') as summaryFile:
@@ -463,6 +498,7 @@ class CanvasPanel(wx.Panel):
             for k, v in self.bc_chan_names.items():
                 if k == name:
                     return v
+        return None
 
     def analyze(self):
         to_analyze = []
@@ -586,11 +622,11 @@ class CanvasPanel(wx.Panel):
                 writer.writerows(csv_post)
 
     def correct_ts(self, timestamps, chan, instr_id):
-        tof = self.time_correction[chan][instr_id]['tof']
-        rt = self.time_correction[chan][instr_id]['rt']
-        if tof != None:
+        start_lag = self.pip[chan][instr_id]['start_lag']
+        stop_lag = self.pip[chan][instr_id]['stop_lag']
+        if start_lag != None:
             timestamps = [timestamps[0] + tof, timestamps[1] + tof]
-        if rt != None:
+        if stop_lag != None:
             timestamps = [timestamps[0], timestamps[1] + rt]
         return timestamps
 
@@ -618,6 +654,7 @@ class CanvasPanel(wx.Panel):
                 print('error bad send')
             self.align_ts(item, item[0][1])
         with open(self.plotfile, mode='ab') as plotFile:
+            csv_post.sort(key=operator.itemgetter(0))
             writer = csv.writer(plotFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             writer.writerows(csv_post)
 
@@ -792,7 +829,7 @@ def sig_handler(signum, frame):
     global stop_requested
     stop_requested = True
 
-def main(instr):
+def main(instr, reupload):
     # Setup signal handler to allow for exiting on Keyboard Interrupt (Ctrl +C)
     signal.signal(signal.SIGTERM, sig_handler)
     signal.signal(signal.SIGINT, sig_handler)
@@ -800,6 +837,7 @@ def main(instr):
     app = wx.App()
 
     if instr:
+        mode = 'i'
         q.put(filepath)
         data_ac = Process(target=d_ac.main_wrapper, args=(q,))
         data_ac.start()
@@ -808,8 +846,20 @@ def main(instr):
         time.sleep(0.5)
         instruments = q.get()
 
-        f = ComplexPlot(q, instruments)
+        f = ComplexPlot(q, instruments, mode)
+    elif reupload:
+        mode = 'r'
+        reup = Process(target=re_r.send, args=(q, reupload))
+        reup.daemon = True
+        reup.start()
+
+        # Get instr dict from reup_raw.py by queue before starting
+        time.sleep(0.5)
+        instruments = q.get()
+
+        f = ComplexPlot(q, instruments, mode)
     else:
+        mode = 't'
         co2 = Process(target=c.send, args=(q,))
         co2.daemon = True
         co2.start()
@@ -819,7 +869,12 @@ def main(instr):
         bc = Process(target=b.send, args=(q,))
         bc.daemon = True
         bc.start()
-        f = ComplexPlot(q)
+
+        # Get instr dict from co2.py by queue before starting
+        time.sleep(0.5)
+        instruments = q.get()
+
+        f = ComplexPlot(q, instruments, mode)
     
     app.MainLoop()
     co2.join()

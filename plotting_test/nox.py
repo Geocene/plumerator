@@ -33,6 +33,7 @@ def send_file(queue, name, thread):
 	else:
 		__location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 	new_path = os.path.join(__location__, '..', 'plume_results', 'Trapac_2019_Day5', name + '.csv')
+	send_name = name.split('-')[0]
 	with open(new_path) as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
 		next(csv_reader)
@@ -48,7 +49,7 @@ def send_file(queue, name, thread):
 			currpost_value = float(first_item[2])
 		except ValueError:
 			currpost_value = 0
-		first_post = ([name, 'NOX'], [currpost_value, datetime.now()])
+		first_post = ([send_name, 'NOX'], [currpost_value, datetime.now()])
 		queue.put(first_post)
 		for item in csv_reader:
 			try:
@@ -61,7 +62,7 @@ def send_file(queue, name, thread):
 				local_value = float(item[2])
 			except ValueError:
 				local_value = 0
-			post = ([name, 'NOX'], [local_value, datetime.now()])
+			post = ([send_name, 'NOX'], [local_value, datetime.now()])
 			queue.put(post)
 
 # def send(queue):

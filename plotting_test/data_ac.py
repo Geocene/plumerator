@@ -515,7 +515,7 @@ def main():
 			sn = element.device.split('/dev/cu.')[1]
 			comport_dict['wchusbserial'](sn)
 
-	print(instruments)
+	print(('instruments', instruments))
 
 	q = Queue()
 	processes = []
