@@ -418,17 +418,26 @@ class CanvasPanel(wx.Panel):
         current_time = datetime.datetime.now()
         if self.selected_co2_plot:
             selected_co2_id = self.getIdByName(self.selected_co2_plot, 'CO2')
-            co2_update = zip(*self.co2_updates[selected_co2_id])
+            try:
+                co2_update = zip(*self.co2_updates[selected_co2_id])
+            except KeyError:
+                co2_update = None
         else:
             co2_update = None
         if self.selected_nox_plot:
             selected_nox_id = self.getIdByName(self.selected_nox_plot, 'NOX')
-            nox_update = zip(*self.nox_updates[selected_nox_id])
+            try:
+                nox_update = zip(*self.nox_updates[selected_nox_id])
+            except KeyError:
+                nox_update = None
         else:
             nox_update = None
         if self.selected_bc_plot:
             selected_bc_id = self.getIdByName(self.selected_bc_plot, 'BC')
-            bc_update = zip(*self.bc_updates[selected_bc_id])
+            try:
+                bc_update = zip(*self.bc_updates[selected_bc_id])
+            except KeyError:
+                bc_update = None
         else:
             bc_update = None
         

@@ -53,7 +53,7 @@ class Instrument(object):
 	def run(self, queue):
 		while not stop_requested:
 			values = self.get_values()
-			if not values:
+			if values is None:
 				continue
 			else:
 				data_pack = ([self.name, self.v_type], values)
@@ -376,9 +376,8 @@ class UCB_Instrument(Instrument):
 			output_ucb = ser.decode('ascii')
 			values_ucb = output_ucb.split('\n')[0].split(',')
 			#print(values_ucb)
-			if float(values_ucb[1])!=0:
-				nox_values.insert(0,float(values_ucb[1]))
-				nox_values.insert(1,dt_object)
+			nox_values.insert(0,float(values_ucb[1]))
+			nox_values.insert(1,dt_object)
 
 		except Exception as e:
 			print("ucb index failure")
