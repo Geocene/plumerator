@@ -65,7 +65,7 @@ def send_file(queue, name, thread):
 	with open(new_path) as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
 		next(csv_reader)
-		for i in range(400):
+		for i in range(1550):
 			next(csv_reader)
 		first_item = next(csv_reader)
 		try:
