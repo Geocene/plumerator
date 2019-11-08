@@ -57,7 +57,7 @@ class Instrument(object):
 				continue
 			else:
 				data_pack = ([self.name, self.v_type], values)
-				print(data_pack)
+				# print(data_pack)
 				queue.put(data_pack)
 		if stop_requested:
 			self.serial.close()
@@ -437,6 +437,7 @@ def main_wrapper(q):
 		'DN03Y92G': SBA5_Instrument,
 		'Vaisala':VCO2_Instrument,
 		'142340':VCO2_Instrument,
+		'141110':VCO2_Instrument,
 		'FTXP9VNO': UCB_Instrument, # CLD64 
 		'FTXPC1N7': CAPS_Instrument,
 		'AH06VSA4': K30_Instrument
@@ -488,7 +489,8 @@ def main():
 		'FTXP9HEV': LI820_Instrument,
 		'DN03Y92G': SBA5_Instrument,
 		'Vaisala':VCO2_Instrument,
-		'142340':VCO2_Instrument,
+		# '142340':VCO2_Instrument,
+		'141110':VCO2_Instrument,
 		'FTXP9VNO': UCB_Instrument, # CLD64 
 		'FTXPC1N7': CAPS_Instrument,
 		'AH06VSA4': K30_Instrument

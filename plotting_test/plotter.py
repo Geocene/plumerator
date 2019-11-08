@@ -81,6 +81,16 @@ class CanvasPanel(wx.Panel):
         # set plume counter
         self.plume_counter = 1
 
+        # plume collecting dict
+        self.plumes = {'CO2':{}, 'NOX':{}, 'BC':{}}
+        for i in range(self.co2_chans):
+            self.plumes['CO2'][i] = []
+        for i in range(self.nox_chans):
+            self.plumes['NOX'][i] = []
+        for i in range(self.bc_chans):
+            self.plumes['BC'][i] = []
+
+
         # create and write headers of output files
         self.filepath = filepath
 
@@ -230,16 +240,16 @@ class CanvasPanel(wx.Panel):
             self.pip['BC'][i] = {'start_lag':None, 'stop_lag':None}
 
         # setup with default pip values
-        self.set_pip_by_chan('BC', 'ABCD', 4, 9)
-        self.set_pip_by_chan('BC', 'AE16', 1, 0)
-        self.set_pip_by_chan('BC', 'AE33', 1, 8)
-        self.set_pip_by_chan('BC', 'MA300', 4, 25)
-        self.set_pip_by_chan('CO2', 'K30', 0, 6)
-        self.set_pip_by_chan('CO2', 'LI7000', 0, 0)
-        self.set_pip_by_chan('CO2', 'LI820', 1, -1)
+        self.set_pip_by_chan('BC', 'ABCD', -3, 20)
+        self.set_pip_by_chan('BC', 'AE16', 1, 6)
+        self.set_pip_by_chan('BC', 'AE33', 1, 12)
+        self.set_pip_by_chan('BC', 'MA300', 1, 28)
+        self.set_pip_by_chan('CO2', 'K30', 0, 7)
+        self.set_pip_by_chan('CO2', 'LI7000', 0, 2)
+        self.set_pip_by_chan('CO2', 'LI820', 0, 3)
         self.set_pip_by_chan('CO2', 'Vaisala', 6, 25)
-        self.set_pip_by_chan('NOX', 'CAPS', 2, 2)
-        self.set_pip_by_chan('NOX', 'UCB', 2, 0)
+        self.set_pip_by_chan('NOX', 'CAPS', -2, 3)
+        self.set_pip_by_chan('NOX', 'UCB', -1, 3)
         # factor out - just for testing
         self.set_pip_by_chan('NOX', 'CLD64', 2, 0)
         self.set_pip_by_chan('CO2', 'SBA5', 0, 0)
@@ -405,16 +415,32 @@ class CanvasPanel(wx.Panel):
         # plot updates
         if co2_update:
             self.co2_axes.plot(co2_update[0], co2_update[1], c='r', linewidth=1.0)
+            for plume in self.plumes['CO2'][selected_co2_id]:
+                if (current_time - plume[0]).total_seconds() <= 180:
+                    p = [(current_time - x).total_seconds() for x in plume]
+                    self.co2_axes.axvline(p[0], c='g', linewidth=1.0)
+                    self.co2_axes.axvline(p[1], c='g', linewidth=1.0)
+
             # if self.co2_ambient[selected_co2_id]:
             #     co2_ambient_line = zip(*[[(current_time - x[0]).total_seconds(), x[1]] for x in self.co2_ambient[selected_co2_id] if (current_time - x[0]).total_seconds() <= 180])
             #     self.co2_axes.plot(co2_ambient_line[0], co2_ambient_line[1], c='b', linewidth=1.5, linestyle='--')
         if bc_update:
             self.bc_axes.plot(bc_update[0], bc_update[1], c='r', linewidth=1.0)
+            for plume in self.plumes['BC'][selected_bc_id]:
+                if (current_time - plume[0]).total_seconds() <= 180:
+                    p = [(current_time - x).total_seconds() for x in plume]
+                    self.bc_axes.axvline(p[0], c='g', linewidth=1.0)
+                    self.bc_axes.axvline(p[1], c='g', linewidth=1.0)
             # if self.bc_ambient[selected_bc_id]:
             #     bc_ambient_line = zip(*[[(current_time - x[0]).total_seconds(), x[1]] for x in self.bc_ambient[selected_bc_id] if (current_time - x[0]).total_seconds() <= 180])
             #     self.bc_axes.plot(bc_ambient_line[0], bc_ambient_line[1], c='b', linewidth=1.5, linestyle='--')
         if nox_update:
             self.nox_axes.plot(nox_update[0], nox_update[1], c='r', linewidth=1.0)
+            for plume in self.plumes['NOX'][selected_nox_id]:
+                if (current_time - plume[0]).total_seconds() <= 180:
+                    p = [(current_time - x).total_seconds() for x in plume]
+                    self.nox_axes.axvline(p[0], c='g', linewidth=1.0)
+                    self.nox_axes.axvline(p[1], c='g', linewidth=1.0)
             # if self.nox_ambient[selected_nox_id]:
             #     nox_ambient_line = zip(*[[(current_time - x[0]).total_seconds(), x[1]] for x in self.nox_ambient[selected_nox_id] if (current_time - x[0]).total_seconds() <= 180])
             #     self.nox_axes.plot(nox_ambient_line[0], nox_ambient_line[1], c='b', linewidth=1.5, linestyle='--')
@@ -612,6 +638,9 @@ class CanvasPanel(wx.Panel):
         with open(self.plumeArea, mode='ab') as plumeArea:
             self.plumeAreas = csv.writer(plumeArea, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             self.plumeAreas.writerow([plume_event_id, instrument_id, instrument_model, channel_species, channel_units, pip_pre, pip_post, plume_start_time, plume_stop_time, baseline_pre, baseline_post, baseline_area, plume_total_area, plume_area, emission_factor])
+        
+        self.plumes[channel_species][chan_id].append([plume_start_time, plume_stop_time])
+
         return plume_area
 
     def getIdByName(self, name, chan):
@@ -788,7 +817,7 @@ class CanvasPanel(wx.Panel):
         plot.set_xlim([120, 0])
         plot.xaxis.set_ticks(np.arange(0, 210, 30))
         if name == 'CO2':
-            plot.set_ylim([-100, 2000])
+            plot.set_ylim([300, 2000])
             plot.set_title('CO2')
             plot.set_ylabel('ppm')
         elif name == 'NOX':
