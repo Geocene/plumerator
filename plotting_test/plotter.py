@@ -247,7 +247,7 @@ class CanvasPanel(wx.Panel):
         self.set_pip_by_chan('CO2', 'K30', 0, 7)
         self.set_pip_by_chan('CO2', 'LI7000', 0, 2)
         self.set_pip_by_chan('CO2', 'LI820', 0, 3)
-        self.set_pip_by_chan('CO2', 'Vaisala', 6, 25)
+        self.set_pip_by_chan('CO2', 'Vaisala', 6, 25) # add +8 to start (ie. -2, 25)
         self.set_pip_by_chan('NOX', 'CAPS', -2, 3)
         self.set_pip_by_chan('NOX', 'UCB', -1, 3)
         # factor out - just for testing
