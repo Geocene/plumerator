@@ -7,6 +7,10 @@ To run:
 > cd Desktop/python_plotting
 > python cli.py -i
 
+To close:
+> Open terminal
+> cntrl-C
+
 Spins up GUI and pulls data from serial ports to a
 multiprocessing queue. Data is displayed in real time across the GUI plots.
 
