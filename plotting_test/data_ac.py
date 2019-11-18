@@ -9,10 +9,14 @@ from multiprocessing import Process, Queue
 import os, sys, csv, re, math
 import numpy as np
 
+# flag for if we should stop the program
 stop_requested = False
+# bc channel corrective value
 bc_correction = 0.88
+# instrument dictionary - initialized instruments are automatically added
 instruments = []
 
+# generate a serial connection with DEVICE over baudrate BAUDRATE
 def serialGeneric(device,baudrate):
 	ser = serial.Serial(port=device,
 		baudrate=baudrate,
@@ -22,6 +26,8 @@ def serialGeneric(device,baudrate):
 	)
 	return ser
 
+
+# signal handler for ctrl-c (quit)
 def sig_handler(signum, frame):
 	sys.stdout.write("handling signal: %s\n" % signum)
 	sys.stdout.flush()
@@ -30,6 +36,8 @@ def sig_handler(signum, frame):
 	stop_requested = True
 
 class Instrument(object):
+
+	# initialize instrument with serial connection and add it to instrument dict
 	def __init__(self, comport, baudrate):
 		if comport:
 			self.serial = serialGeneric(comport, baudrate)
@@ -42,6 +50,7 @@ class Instrument(object):
 	def __repr__(self):
 		return self.__str__()
 
+	# dumps the serial output SER, which was received at datetime DT, into rawraw_data.csv
 	def dumpserial(self, ser, dt):
 		with open(filepath + 'rawraw_data.csv', mode='ab') as rawFile:
 			fcntl.flock(rawFile, fcntl.LOCK_EX)
@@ -50,6 +59,7 @@ class Instrument(object):
 			fcntl.flock(rawFile, fcntl.LOCK_UN)
 		return
 
+	# continually call Instr get_values() func to receive serial output until STOP_REQUESTED
 	def run(self, queue):
 		while not stop_requested:
 			values = self.get_values()
@@ -61,6 +71,9 @@ class Instrument(object):
 				queue.put(data_pack)
 		if stop_requested:
 			self.serial.close()
+
+	# def get_values(self):
+	# exists for each defined instrument below, parses serial output to a datetime and value (sometimes includes attn and flow)
 
 # BC Instr
 
@@ -411,10 +424,12 @@ class CAPS_Instrument(Instrument):
 			return None
 		return nox_values
 
+# main method for use when file is run through multiprocessing (like in this ../cli.py)
 def main_wrapper(q):
 	global filepath
 	filepath = q.get()
 
+	# create output dir using filepath (sent to queue Q from plotter.py)
 	if not os.path.exists(os.path.dirname(filepath)):
             try:
                 os.makedirs(os.path.dirname(filepath))
@@ -422,10 +437,12 @@ def main_wrapper(q):
                 if exc.errno != errno.EEXIST:
                     raise
 
+    # initialize rawraw_data.py header
 	with open(filepath + 'rawraw_data.csv', mode='wb') as rawFile:
 		rawData = csv.writer(rawFile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
 		rawData.writerow(['Timestamp', 'Instr', 'S#', 'Message'])
 
+	# dictionary mapping serial numbers to Instrument objects ** CHANGE THIS TO ADD MORE INSTRUMENTS **
 	comport_dict = {
 		'FTXP6UA4': AE33_Instrument,
 		'FTXP9NHN': AE16_Instrument,
@@ -451,6 +468,8 @@ def main_wrapper(q):
 	comport_pattern = re.compile('\/dev\/cu\.usbserial(\-(.)*)?$')
 	serial_comlist = []
 
+	# initialize instrument objects for each serial connection (view in terminal with ls /dev/cu.*) that matches 
+	# comport_pattern (/dev/cu.usbserial- or /dev/cu.wchusbsereial for ABCD)
 	for element in comlist:
 		if comport_pattern.match(element.device):
 			try:

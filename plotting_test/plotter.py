@@ -374,13 +374,10 @@ class CanvasPanel(wx.Panel):
         #     self.update_ambient()
         #     self.ambient_cs = 5
 
-        update_am = time.time()
-        row.append(update_am - getUpdate)
-
         # plume analysis and summary write
         self.analyze(current_time)
         analyze = time.time()
-        row.append(analyze - update_am)
+        row.append(analyze - getUpdate)
         self.write_ts(current_time)
         write_summ = time.time()
         row.append(write_summ - analyze)
@@ -698,7 +695,6 @@ class CanvasPanel(wx.Panel):
 
     def get_ts_dict(self, start_time, stop_time):
         ret = collections.OrderedDict()
-        print(start_time, stop_time)
         t = start_time
         while t != stop_time:
             ret[t] = self.ts_aligned_dps[t]
@@ -830,6 +826,9 @@ class CanvasPanel(wx.Panel):
             plot.set_ylabel(r'$\mu g/m^3$')
             plot.set_xlabel('seconds ago')
         plot.tick_params(axis='y', left=True, right=True, labelright=True)
+        # draw analysis horizons
+        plot.axvline(45, c='b', linewidth=0.5, linestyle='--')
+
 
     def correct_ts(self, timestamps, chan, instr_id):
         start_lag = self.pip[chan][instr_id]['start_lag']
