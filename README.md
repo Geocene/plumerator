@@ -11,6 +11,9 @@ To close:
 > Open terminal
 > cntrl-C
 
+To add/remove instruments (for program development):
+> Check 'comport_dict' in data.py
+
 Spins up GUI and pulls data from serial ports to a
 multiprocessing queue. Data is displayed in real time across the GUI plots.
 
