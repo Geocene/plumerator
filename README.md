@@ -4,11 +4,14 @@ To install dependencies:
 
 To run:
 > Open terminal
+
 > cd Desktop/python_plotting
+
 > python cli.py -i
 
 To close:
 > Open terminal
+
 > cntrl-C
 
 To add/remove instruments (for program development):
