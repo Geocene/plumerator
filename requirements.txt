@@ -1,5 +1,5 @@
 matplotlib==2.2.4
-numpy==1.16.4
+numpy==1.22.0
 PyInstaller==3.4
 pyparsing==2.4.0
 pyserial==3.4
